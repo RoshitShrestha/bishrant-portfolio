@@ -1,4 +1,6 @@
 
+// console log
+console.log("github code");
 
 // ==============================
 // SVG PATH
@@ -24,9 +26,7 @@ function handleResize() {
   peelLayers.forEach((peelLayer) => peelLayer.remove());
   peel = null;
 
-  const peelEl = document.querySelector("#strip");
-
-  console.log("github code");
+  const peelEl = document.querySelector("#book");
   
   const rect = peelEl.getBoundingClientRect();
 
