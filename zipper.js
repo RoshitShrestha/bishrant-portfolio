@@ -27,8 +27,6 @@ function handleResize() {
   peel = null;
 
   const peelEl = document.querySelector("#book");
-
-  console.log("github code");
   
   const rect = peelEl.getBoundingClientRect();
 
