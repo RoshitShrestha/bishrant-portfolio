@@ -22,7 +22,7 @@ function handleResize() {
   peelLayers.forEach((peelLayer) => peelLayer.remove());
   peel = null;
 
-  const peelEl = document.querySelector("#book");
+  const peelEl = document.querySelector("#strip");
   const rect = peelEl.getBoundingClientRect();
 
   const WIDTH = rect.width;
