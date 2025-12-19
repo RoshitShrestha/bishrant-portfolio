@@ -59,7 +59,7 @@ function handleResize() {
   const scaleX = WIDTH / SVG_SIZE.width;
   const scaleY = HEIGHT / SVG_SIZE.height;
 
-  peel = new Peel("#book", {
+  peel = new Peel("#strip", {
     path: {
       d: path,
       transform: `scale(${scaleX} ${scaleY})`,
