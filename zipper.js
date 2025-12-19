@@ -21,12 +21,12 @@ window.addEventListener("resize", handleResize);
 // PEEL INSTANCE
 // =====================
 function handleResize() {
-  const peelLayers = document.querySelectorAll(".peel-layer");
+  const peelLayers = document.querySelectorAll("#strip .peel-layer");
 
   peelLayers.forEach((peelLayer) => peelLayer.remove());
   peel = null;
 
-  const peelEl = document.querySelector("#book");
+  const peelEl = document.querySelector("#strip");
   
   const rect = peelEl.getBoundingClientRect();
 
