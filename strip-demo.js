@@ -112,8 +112,8 @@ function autoCompletePeel(
   gsap.to(proxy, {
     x: endX,
     y: endY,
-    duration: 0.3,
-    ease: "power3.in", // equivalent to easeOutQuad
+    duration: 2,
+    ease: "expo.in", // equivalent to easeOutQuad
     onUpdate() {
       peelInstance.setPeelPosition(proxy.x, proxy.y);
     }
