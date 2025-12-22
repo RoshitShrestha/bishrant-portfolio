@@ -1,6 +1,6 @@
 
 // console log
-console.log("github code gsap update");
+console.log("github code expo");
 
 // ==============================
 // SVG PATH
