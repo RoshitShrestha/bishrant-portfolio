@@ -1,6 +1,6 @@
 
 // console log
-console.log("github code id update");
+console.log("github code gsap update");
 
 // ==============================
 // SVG PATH
@@ -112,7 +112,7 @@ function autoCompletePeel(
   gsap.to(proxy, {
     x: endX,
     y: endY,
-    duration: 3,
+    duration: 0.3,
     ease: "power3.in", // equivalent to easeOutQuad
     onUpdate() {
       peelInstance.setPeelPosition(proxy.x, proxy.y);
