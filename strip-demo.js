@@ -64,6 +64,10 @@ function handleResize() {
       d: path,
       transform: `scale(${scaleX} ${scaleY})`,
     },
+    backShadowSize: 0.1,
+	backShadowAlpha: 0.1,
+	backReflection: true,
+    backReflectionAlpha: .3,
   });
   peel.setCorner(WIDTH, HEIGHT / 2);
   peel.setMode("book");
@@ -103,20 +107,15 @@ function autoCompletePeel(
   const endX = -WIDTH * 1.2;
   const endY = -HEIGHT * 1.2;
 
-  const DURATION = 5000;
-  const startTime = performance.now();
+  const proxy = { x: startX, y: startY };
 
-  function animate(time) {
-    const t = Math.min((time - startTime) / DURATION, 1);
-    const eased = t * (2 - t); // easeOutQuad
-
-    peelInstance.setPeelPosition(
-      startX + (endX - startX) * eased,
-      startY + (endY - startY) * eased
-    );
-
-    if (t < 1) requestAnimationFrame(animate);
-  }
-
-  requestAnimationFrame(animate);
+  gsap.to(proxy, {
+    x: endX,
+    y: endY,
+    duration: 5,
+    ease: "power1.out", // equivalent to easeOutQuad
+    onUpdate() {
+      peelInstance.setPeelPosition(proxy.x, proxy.y);
+    }
+  });
 }
