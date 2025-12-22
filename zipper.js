@@ -124,8 +124,8 @@ function autoCompletePeel(
   tl.to(
     "[data-zoom-wrapper]",
     {
-      duration: 2,
-			y: "-15vw",		
+    	duration: 2,
+			y: "-11vw",		
       z: "490vw",
 			ease: "power2,in",
     },
