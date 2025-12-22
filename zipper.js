@@ -64,8 +64,8 @@ function handleResize() {
       d: path,
       transform: `scale(${scaleX} ${scaleY})`,
     },
-    backShadowSize: 0.2,
-	backShadowAlpha: 1,
+    backShadowSize: 0.1,
+	backShadowAlpha: 0.1,
 	backReflection: true,
     backReflectionAlpha: .3,
   });
