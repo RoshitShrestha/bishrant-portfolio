@@ -108,14 +108,27 @@ function autoCompletePeel(
   const endY = -HEIGHT * 1.2;
 
   const proxy = { x: startX, y: startY };
-
-  gsap.to(proxy, {
-    x: endX,
-    y: endY,
-    duration: 4,
-    ease: "power2.out", // equivalent to easeOutQuad
-    onUpdate() {
-      peelInstance.setPeelPosition(proxy.x, proxy.y);
-    }
+	
+  const tl = gsap.timeline({
+    defaults: {
+      duration: 4,
+      ease: "power2.out",
+      onUpdate() {
+        peelInstance.setPeelPosition(proxy.x, proxy.y);
+      },
+    },
   });
+
+  // Animate the peel
+  tl.to(proxy, { x: endX, y: endY });
+  tl.to(
+    "[data-zoom-wrapper]",
+    {
+      duration: 2,
+			y: "-15vw",		
+      z: "490vw",
+			ease: "power2,in",
+    },
+    "=-2"
+  );
 }
