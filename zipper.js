@@ -65,8 +65,8 @@ function handleResize() {
       transform: `scale(${scaleX} ${scaleY})`,
     },
     backShadowSize: 0.1,
-		backShadowAlpha: 0.1,
-		backReflection: true,
+	backShadowAlpha: 0.1,
+	backReflection: true,
     backReflectionAlpha: .3,
   });
   peel.setCorner(WIDTH, HEIGHT / 2);
