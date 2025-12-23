@@ -195,6 +195,6 @@ function autoCompletePeel(
       z: "490vw",
 			ease: "power2,in",
     },
-    "=-2"
+    "=-3.5"
   );
 }
