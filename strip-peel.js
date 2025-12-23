@@ -1,6 +1,6 @@
 
 // console log
-console.log("github code id update");
+console.log("github responsive html");
 
 // ==============================
 // SVG PATH
