@@ -61,6 +61,7 @@ function handleResize() {
   // =====================
   let autoPeeling = false;
   let currentPos = { ...CORNER };
+	let stripHoverEnabled = true;
 
   // =====================
   // SVG → ELEMENT SCALE
@@ -86,11 +87,46 @@ function handleResize() {
   peel.setCorner(WIDTH, HEIGHT / 2);
   peel.setMode("book");
 
+	// =====================
+	// Hover animation
+	// =====================
+	hoverAmt = { x: WIDTH, y: HEIGHT / 2 };
+
+	const onMouseEnter = () => {
+		if (!stripHoverEnabled) return;  // skip if disabled
+		gsap.to(hoverAmt, {
+			duration: 0.4,
+			x: WIDTH * 0.98,
+			y: HEIGHT * 0.4,
+			ease: "power1.out",
+			onUpdate: function () {
+				peel.setPeelPosition(hoverAmt.x, hoverAmt.y);
+			}
+		});
+	};
+	const onMouseLeave = () => {
+		if (!stripHoverEnabled) return;  // skip if disabled
+		gsap.to(hoverAmt, {
+			duration: 0.4,
+			x: WIDTH ,
+			y: HEIGHT/2,
+			ease: "power1.out",
+			onUpdate: function () {
+				peel.setPeelPosition(hoverAmt.x, hoverAmt.y);
+			}
+		});
+	};
+
+	peelEl.addEventListener("mouseenter", onMouseEnter);
+	peelEl.addEventListener("mouseleave", onMouseLeave);
+
   // =====================
   // DRAG HANDLER
   // =====================
   peel.handleDrag(function (_, x, y) {
     if (autoPeeling) return;
+
+		stripHoverEnabled = false;
 
     const peelEl = this.el;
     const style = getComputedStyle(peelEl);
