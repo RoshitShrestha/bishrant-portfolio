@@ -1,6 +1,5 @@
-
 // console log
-console.log("github y position update");
+console.log("updated timing");
 
 // ==============================
 // SVG PATH
@@ -29,18 +28,18 @@ window.addEventListener("resize", handleResize);
 function handleResize() {
   // const peelLayers = document.querySelectorAll("#strip .peel-layer");
   // peelLayers.forEach((peelLayer) => peelLayer.remove());
-	
+
   const peelEl = document.querySelector("#strip");
 
-	if (peelEl) {
-		peelEl.innerHTML = "";
-	}
-	
+  if (peelEl) {
+    peelEl.innerHTML = "";
+  }
+
   peel = null;
 
-	if (peelEl && stripHTML) {
-		peelEl.innerHTML = stripHTML;
-	}
+  if (peelEl && stripHTML) {
+    peelEl.innerHTML = stripHTML;
+  }
 
   const rect = peelEl.getBoundingClientRect();
 
@@ -53,15 +52,15 @@ function handleResize() {
   // max possible drag distance
   const MAX_DISTANCE = Math.hypot(WIDTH, HEIGHT);
 
-  // auto peel threshold (40%)
-  const AUTO_PEEL_AT = MAX_DISTANCE * 0.4;
+  // auto peel threshold
+  const AUTO_PEEL_AT = MAX_DISTANCE * 0.3;
 
   // =====================
   // STATE
   // =====================
   let autoPeeling = false;
   let currentPos = { ...CORNER };
-	let stripHoverEnabled = true;
+  let stripHoverEnabled = true;
 
   // =====================
   // SVG → ELEMENT SCALE
@@ -80,45 +79,57 @@ function handleResize() {
       transform: `scale(${scaleX} ${scaleY})`,
     },
     backShadowSize: 0.1,
-	backShadowAlpha: 0.1,
-	backReflection: true,
-    backReflectionAlpha: .3,
+    backShadowAlpha: 0.1,
+    backReflection: true,
+    backReflectionAlpha: 0.3,
   });
-  peel.setCorner(WIDTH, HEIGHT / 2);
   peel.setMode("book");
 
-	// =====================
-	// Hover animation
-	// =====================
-	hoverAmt = { x: WIDTH, y: HEIGHT / 2 };
+  // =====================
+  // INITIAL VALUES
+  // =====================
+  const initialPos = { x: WIDTH, y: HEIGHT / 2 };
+  const hoverPos = { x: WIDTH * 0.98, y: HEIGHT * 0.4 };
 
-	const onMouseEnter = () => {
-		if (!stripHoverEnabled) return;  // skip if disabled
-		gsap.to(hoverAmt, {
-			duration: 0.4,
-			x: WIDTH * 0.98,
-			y: HEIGHT * 0.4,
-			ease: "power1.out",
-			onUpdate: function () {
-				peel.setPeelPosition(hoverAmt.x, hoverAmt.y);
-			}
-		});
-	};
-	const onMouseLeave = () => {
-		if (!stripHoverEnabled) return;  // skip if disabled
-		gsap.to(hoverAmt, {
-			duration: 0.4,
-			x: WIDTH ,
-			y: HEIGHT/2,
-			ease: "power1.out",
-			onUpdate: function () {
-				peel.setPeelPosition(hoverAmt.x, hoverAmt.y);
-			}
-		});
-	};
+  // Make sure peel starts perfectly
+  peel.setCorner(initialPos.x, initialPos.y);
 
-	peelEl.addEventListener("mouseenter", onMouseEnter);
-	peelEl.addEventListener("mouseleave", onMouseLeave);
+  // =====================
+  // TIMELINE
+  // =====================
+  const peelHoverTL = gsap.timeline({
+    paused: true,
+    defaults: { duration: 0.4, ease: "power1.out" },
+  });
+
+  peelHoverTL.to(initialPos, {
+    x: hoverPos.x,
+    y: hoverPos.y,
+    onUpdate: () => {
+      peel.setPeelPosition(initialPos.x, initialPos.y);
+    },
+  });
+  peelHoverTL.eventCallback("onReverseComplete", () => {
+    peel.setPeelPosition(WIDTH, HEIGHT / 2);
+    console.log("peel reverse complete")
+    console.log(WIDTH, HEIGHT/2)
+  });
+
+  // =====================
+  // EVENTS
+  // =====================
+  const onMouseEnter = () => {
+    if (!stripHoverEnabled) return;
+    peelHoverTL.play();
+  };
+
+  const onMouseLeave = () => {
+    if (!stripHoverEnabled) return;
+    peelHoverTL.reverse();
+  };
+
+  peelEl.addEventListener("mouseenter", onMouseEnter);
+  peelEl.addEventListener("mouseleave", onMouseLeave);
 
   // =====================
   // DRAG HANDLER
@@ -126,7 +137,7 @@ function handleResize() {
   peel.handleDrag(function (_, x, y) {
     if (autoPeeling) return;
 
-		stripHoverEnabled = false;
+    stripHoverEnabled = false;
 
     const peelEl = this.el;
     const style = getComputedStyle(peelEl);
@@ -174,27 +185,29 @@ function autoCompletePeel(
   const endY = -HEIGHT * 1.2;
 
   const proxy = { x: startX, y: startY };
-	
-  const tl = gsap.timeline({
-    defaults: {
-      duration: 4,
-      ease: "power2.out",
-      onUpdate() {
-        peelInstance.setPeelPosition(proxy.x, proxy.y);
-      },
-    },
-  });
+
+  const tl = gsap.timeline();
 
   // Animate the peel
-  tl.to(proxy, { x: endX, y: endY });
+  tl.to(
+    proxy, 
+    {
+        duration: 4,
+        ease: "power2.out",
+        x: endX,
+        y: endY,
+        onUpdate() {
+            peelInstance.setPeelPosition(proxy.x, proxy.y);
+        },
+    });
   tl.to(
     "[data-zoom-wrapper]",
     {
-    	duration: 2,
-			y: "-18vh",		
+      duration: 1,
+      y: "-18vh",
       z: "490vw",
-			ease: "power2,in",
+      ease: "expo,in",
     },
-    "=-3.5"
+    "=-3.8"
   );
 }
