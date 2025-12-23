@@ -191,7 +191,7 @@ function autoCompletePeel(
     "[data-zoom-wrapper]",
     {
     	duration: 2,
-			y: "-18vw",		
+			y: "-18vh",		
       z: "490vw",
 			ease: "power2,in",
     },
