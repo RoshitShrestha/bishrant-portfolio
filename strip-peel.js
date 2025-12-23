@@ -13,6 +13,12 @@ const path =
 // =====================
 
 let peel = null;
+let stripHTML = "";
+
+const stripContent = document.querySelector("#strip");
+if (stripContent) {
+  stripHTML = stripContent.innerHTML;
+}
 
 handleResize();
 window.addEventListener("resize", handleResize);
@@ -21,13 +27,21 @@ window.addEventListener("resize", handleResize);
 // PEEL INSTANCE
 // =====================
 function handleResize() {
-  const peelLayers = document.querySelectorAll("#strip .peel-layer");
+  // const peelLayers = document.querySelectorAll("#strip .peel-layer");
+  // peelLayers.forEach((peelLayer) => peelLayer.remove());
+	
+  const peelEl = document.querySelector("#strip");
 
-  peelLayers.forEach((peelLayer) => peelLayer.remove());
+	if (peelEl) {
+		peelEl.innerHTML = "";
+	}
+	
   peel = null;
 
-  const peelEl = document.querySelector("#strip");
-  
+	if (peelEl && stripHTML) {
+		peelEl.innerHTML = stripHTML;
+	}
+
   const rect = peelEl.getBoundingClientRect();
 
   const WIDTH = rect.width;
