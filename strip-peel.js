@@ -1,6 +1,6 @@
 
 // console log
-console.log("github responsive html");
+console.log("github added hover animation");
 
 // ==============================
 // SVG PATH
