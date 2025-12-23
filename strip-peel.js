@@ -1,6 +1,6 @@
 
 // console log
-console.log("github added hover animation");
+console.log("github y position update");
 
 // ==============================
 // SVG PATH
@@ -191,7 +191,7 @@ function autoCompletePeel(
     "[data-zoom-wrapper]",
     {
     	duration: 2,
-			y: "-11vw",		
+			y: "-18vw",		
       z: "490vw",
 			ease: "power2,in",
     },
