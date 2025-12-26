@@ -651,7 +651,11 @@ async function init() {
       x: 0, 
       y:0, 
       z: 0, 
-      ease: "expo.out"
+      ease: "expo.out",
+      stagger: {
+        each: 0.08,   // delay between elements
+        from: "start" // or "center", "end", "random"
+      }
     },
     "init+=1.7"
   ).to(
@@ -660,7 +664,11 @@ async function init() {
       duration: 1,
       filter:"blur(0px)", 
       opacity: 1,
-      ease: "expo.out"
+      ease: "expo.out",
+      stagger: {
+        each: 0.08,
+        from: "start"
+      }
     },
     "init+=1.7"
   );
