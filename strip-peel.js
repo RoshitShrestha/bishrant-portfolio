@@ -3,7 +3,6 @@
 // ==============================
 import * as THREE from "three";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
-// import gsap from "gsap";
 
 // ==============================
 // LOG
@@ -125,82 +124,95 @@ const camera = new THREE.PerspectiveCamera(
 );
 
 const cameraStartZ = 15;
-const vectorCount = 8;
-const vectorSpacing = 18;
-const cameraEndZ = -(vectorCount - 1) * vectorSpacing - 40;
+const vectorCount = 16;  //8 was
+const vectorSpacing =  18;
+const lastVectorZ = -(vectorCount - 1) * vectorSpacing;
+const cameraEndZ = lastVectorZ - 40; // buffer past last SVG
 camera.position.z = cameraStartZ;
 
 // ==============================
 // GRADIENT MATERIAL
 // ==============================
-const blobGeometry = new THREE.PlaneGeometry(2, 2);
+const bgGradientGeometry = new THREE.PlaneGeometry(2, 2);
 
-const blob1StartY = -0.4;
-const blob2StartY = -0.5;
+const rectHeight = 0.4;
+const rectCenterStart = rectHeight/2;
+const rectCenterEnd = -rectHeight/2;
 
-const blob1EndY = -0.25;
-const blob2EndY = -0.05;
-
-const blobMaterial = new THREE.ShaderMaterial({
+const bgGradientMaterial = new THREE.ShaderMaterial({
   depthWrite: false,
   depthTest: false,
   uniforms: {
-    uResolution: {
-      value: new THREE.Vector2(window.innerWidth, window.innerHeight),
-    },
-    uTime: { value: 0 },
+    rectHeight: { value: rectHeight },
+    topRectCenterY: { value: 1.0 - rectCenterStart },
+    bottomRectCenterY: { value: rectCenterStart },
+  
+    // Top rectangle: 2 colors
+    topColorStart: { value: new THREE.Vector3(0.0667, 0.0, 0.0) },    // bot
+    topColorEnd: { value: new THREE.Vector3(0.2627, 0.0, 0.0) },    // top
 
-    // blob positions (0–1 screen space)
-    blob1: { value: new THREE.Vector2(0.14, blob1StartY) },
-    blob2: { value: new THREE.Vector2(0.75, blob2StartY) },
+    // Bottom rectangle: 2 colors
+    bottomColorStart: { value: new THREE.Vector3(0.4431, 0.0157, 0.0157) },   // top
+    bottomColorEnd: { value: new THREE.Vector3(0.0667, 0.0, 0.0) },   // bot
+
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
   },
 
   vertexShader: `
+    uniform vec2 uResolution;
     varying vec2 vUv;
     void main() {
-      vUv = uv;
-      gl_Position = vec4(position, 1.0);
+      // Map positions to clip space, scale full width based on screen
+      vec2 scaledPosition = position.xy;
+      scaledPosition.x *= uResolution.x / uResolution.y; // stretch width to match screen
+      vUv = position.xy * 0.5 + 0.5;
+      gl_Position = vec4(scaledPosition, 0.0, 1.0);
     }
+
   `,
 
   fragmentShader: `
     precision highp float;
 
     varying vec2 vUv;
-    uniform vec2 blob1;
-    uniform vec2 blob2;
+    uniform float rectHeight;
+    uniform float topRectCenterY;
+    uniform float bottomRectCenterY;
 
-    float blob(vec2 uv, vec2 center, float radius) {
-      float d = distance(uv, center);
-      return smoothstep(radius, 0.0, d);
+    uniform vec3 topColorStart;
+    uniform vec3 topColorEnd;
+    uniform vec3 bottomColorStart;
+    uniform vec3 bottomColorEnd;
+
+    // Returns 1 inside rectangle, 0 outside
+    float rectMask(float uvY, float centerY, float height) {
+        float halfH = height * 0.5;
+        return step(centerY - halfH, uvY) * step(uvY, centerY + halfH);
     }
 
     void main() {
-      // --- Pure black background ---
-      vec3 baseColor = vec3(0.0667, 0.0, 0.0);
-    
-      // --- Large blurry blobs near the bottom ---
-      float b1 = blob(vUv, blob1, 0.7);
-      float b2 = blob(vUv, blob2, 0.8);
-      float blobs = b1 + b2;
-    
-      // --- Vertical fade so blobs don't reach the top ---
-      float bottomFade = smoothstep(0.85, 0.25, vUv.y);
-      blobs *= bottomFade;
-    
-      // --- Red light contribution ---
-      vec3 red = vec3(1.0, 0.0, 0.0);
-    
-      vec3 color = mix(baseColor, red, blobs * 0.5);
-    
-      gl_FragColor = vec4(color, 1.0);
+        vec3 baseColor = vec3(0.0667, 0.0, 0.0);
+
+        float topMask = rectMask(vUv.y, topRectCenterY, rectHeight);
+        float bottomMask = rectMask(vUv.y, bottomRectCenterY, rectHeight);
+
+        float topGradientPos = clamp((vUv.y - (topRectCenterY - rectHeight * 0.5)) / rectHeight, 0.0, 1.0);
+        float bottomGradientPos = clamp((vUv.y - (bottomRectCenterY - rectHeight * 0.5)) / rectHeight, 0.0, 1.0);
+
+        vec3 topColor = mix(topColorStart, topColorEnd, topGradientPos);
+        vec3 bottomColor = mix(bottomColorStart, bottomColorEnd, bottomGradientPos);
+
+        vec3 color = baseColor;
+        color = mix(color, topColor, topMask);
+        color = mix(color, bottomColor, bottomMask);
+
+        gl_FragColor = vec4(color, 1.0);
     }
-    
   `,
 });
-const blobMesh = new THREE.Mesh(blobGeometry, blobMaterial);
-blobMesh.frustumCulled = false;
-scene.add(blobMesh);
+const bgGradientMesh = new THREE.Mesh(bgGradientGeometry, bgGradientMaterial);
+bgGradientMesh.frustumCulled = false;
+scene.add(bgGradientMesh);
 
 // ==============================
 // MASK MATERIAL
@@ -296,6 +308,118 @@ maskMesh.frustumCulled = false;
 scene.add(maskMesh);
 
 // ==============================
+// POST PROCESS FISHEYE
+// ==============================
+const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const postProcessMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: null },      // Scene texture
+    uBulge: { value: 0.0 },         // Bulge intensity
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position.xy, 0.0, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+
+    varying vec2 vUv;
+
+    uniform sampler2D tDiffuse;
+    uniform float uBulge;       // 0.0 → 1.0
+    uniform vec2 uResolution;   // screen resolution
+
+    const int SAMPLES = 15;      // number of blur samples
+    const float SIGMA = 0.03;    // blur intensity
+
+    // 1D Gaussian function
+    float gaussian(float x, float sigma) {
+        return exp(-0.5 * (x * x) / (sigma * sigma)) / (sigma * sqrt(6.2831853));
+    }
+
+    // Radial Gaussian blur
+    vec4 radialBlur(sampler2D tex, vec2 uv, vec2 center, float strength, float rOriginal) {
+      vec4 color = vec4(0.0);
+      float total = 0.0;
+
+      // Precompute chromatic offsets once using the original r
+      float ca = uBulge * 0.015 * rOriginal;
+      vec2 offsetR = vec2(ca, 0.0);
+      vec2 offsetG = vec2(0.0, ca);
+      vec2 offsetB = vec2(-ca, 0.0);
+
+      for (int i = 0; i < 31; i++) {
+          float t = (float(i) - 15.0) / 15.0; // -SAMPLES..SAMPLES
+          float weight = gaussian(t, SIGMA);
+
+          vec2 sampleUV = mix(center, uv, 1.0 + t * strength);
+
+          vec4 sampleColor;
+          sampleColor.r = texture2D(tex, sampleUV + offsetR).r;
+          sampleColor.g = texture2D(tex, sampleUV + offsetG).g;
+          sampleColor.b = texture2D(tex, sampleUV + offsetB).b;
+          sampleColor.a = 1.0;
+
+          color += sampleColor * weight;
+          total += weight;
+      }
+
+      return color / total;
+    }
+
+
+    void main() {
+        // Convert to normalized [-1,1] coordinates
+        vec2 uv = vUv * 2.0 - 1.0;
+        uv.x *= uResolution.x / uResolution.y;
+
+        float r = length(uv);
+        float theta = 0.0;
+
+        if (r > 0.0) {
+            theta = atan(uv.y, uv.x);
+
+            // Bulge effect
+            float bulgeStrength = uBulge * 0.5;
+            float bulgeRadius = r + r * (1.0 - r) * bulgeStrength;
+
+            uv = vec2(cos(theta), sin(theta)) * bulgeRadius;
+        }
+
+        // Convert back to [0,1]
+        uv.x /= uResolution.x / uResolution.y;
+        vec2 finalUV = uv * 0.5 + 0.5;
+
+        // Radial blur mask (applied only on distorted edges)
+        float innerRadius = 0.3;       // where blur starts
+        float outerRadius = 0.7;       // full blur at this distance
+        float bulgeMask = smoothstep(innerRadius, outerRadius, r);
+
+        // Apply radial Gaussian blur **with chromatic aberration inside**
+        vec4 blurredColor = radialBlur(tDiffuse, finalUV, vec2(0.5), uBulge, r);
+
+        // Output
+        gl_FragColor = blurredColor * bulgeMask + texture2D(tDiffuse, finalUV) * (1.0 - bulgeMask);
+    }
+  `
+});
+
+// Fullscreen quad geometry
+const postProcessGeometry = new THREE.PlaneGeometry(2, 2);
+const postProcessMesh = new THREE.Mesh(postProcessGeometry, postProcessMaterial);
+postProcessMesh.frustumCulled = false;
+const postProcessScene = new THREE.Scene();
+postProcessScene.add(postProcessMesh);
+
+// Create a render target
+const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+
+
+// ==============================
 // RENDERER
 // ==============================
 const renderer = new THREE.WebGLRenderer({
@@ -309,13 +433,12 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const SETTINGS = {
   svgScale: 0.1,
   fade: { start: 60, end: 5 },
-  tail: { count: 6, maxOpacity: 1, minOpacity: 0.3 },
-  fillColor: 0xc89e44,
-  duration: 7,
+  tail: { count: 6, maxOpacity: 1, minOpacity: 0.15 },
+  duration: 8, //7 was
 };
 
 const svgVariants = [
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16290488876912b288_vector-stroke-1.svg",
+  // "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16290488876912b288_vector-stroke-1.svg",
   "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb163e95ff2ab066a62f_vector-stroke-2.svg",
   "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16b352d21ee4e6708d_vector-stroke-3.svg",
   "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16c941d26634d897ec_vector-stroke-4.svg",
@@ -345,48 +468,138 @@ async function loadSVGCached(url) {
 async function createSVGMesh(zPos, index) {
   const group = new THREE.Group();
 
+  // Determine SVG variant
   const mainCount = vectorCount - (svgVariants.length - 1);
-  let svgIndex =
-    index < mainCount
-      ? 0
-      : Math.min(1 + (index - mainCount), svgVariants.length - 1);
+  let svgIndex;
+  if (index < mainCount) {
+    svgIndex = 0;
+  } else {
+    svgIndex = 1 + (index - mainCount);
+    svgIndex = Math.min(svgIndex, svgVariants.length - 1);
+  }
 
   const svgPaths = await loadSVGCached(svgVariants[svgIndex]);
 
+  // Tail opacity
   const tailStart = Math.max(0, vectorCount - SETTINGS.tail.count);
   const isTail = index >= tailStart;
-  const opacityCap = isTail
-    ? THREE.MathUtils.lerp(
-        SETTINGS.tail.maxOpacity,
-        SETTINGS.tail.minOpacity,
-        (index - tailStart) / Math.max(1, SETTINGS.tail.count - 1)
-      )
-    : 1;
+  let opacityCap = 1;
+  if (isTail) {
+    const t = (index - tailStart) / Math.max(1, SETTINGS.tail.count - 1);
+    opacityCap = THREE.MathUtils.lerp(
+      SETTINGS.tail.maxOpacity,
+      SETTINGS.tail.minOpacity,
+      t
+    );
+  }
 
+  // Create meshes
   svgPaths.forEach((path) => {
     const shapes = SVGLoader.createShapes(path);
     shapes.forEach((shape) => {
       const geometry = new THREE.ShapeGeometry(shape);
-      const material = new THREE.MeshBasicMaterial({
-        color: SETTINGS.fillColor,
-        side: THREE.DoubleSide,
+      geometry.computeBoundingBox();
+
+      const bbox = geometry.boundingBox;
+      const size = new THREE.Vector2(
+        bbox.max.x - bbox.min.x,
+        bbox.max.y - bbox.min.y
+      );
+
+      const uvs = [];
+      const positions = geometry.attributes.position.array;
+
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i];
+        const y = positions[i + 1];
+
+        uvs.push((x - bbox.min.x) / size.x, (y - bbox.min.y) / size.y);
+      }
+
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      const material = new THREE.ShaderMaterial({
         transparent: true,
-        opacity: 0,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uOpacity: { value: 1.0 },
+          //uBlur: { value: 0 },
+          stopLeft: { value: 0.3 },
+          stopCenter: { value: 0.5 },
+          stopRight: { value: 0.7 },
+          colorLeft: { value: new THREE.Vector4(0.2627, 0.0706, 0.0706, 0.0) },   // white transparent
+          colorCenter: { value: new THREE.Vector4(0.6196, 0.2431, 0.2431, 1.0) }, // red opaque
+          colorRight: { value: new THREE.Vector4(0.2627, 0.0706, 0.0706, 0.0) },  // white transparent
+        },
+        vertexShader: `
+          varying vec2 vUv;
+
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+
+          varying vec2 vUv;
+
+          uniform float uOpacity;
+
+          uniform float stopLeft;   // e.g. 0.2
+          uniform float stopCenter; // e.g. 0.5
+          uniform float stopRight;  // e.g. 0.8
+
+          uniform vec4 colorLeft;   // white transparent (1,1,1,0)
+          uniform vec4 colorCenter; // red opaque (1,0,0,1)
+          uniform vec4 colorRight;  // white transparent (1,1,1,0)
+
+          void main() {
+              // Smooth transitions around each stop (adjust edge softness with edgeSize)
+              float edgeSize = 0.01;
+
+              float leftEdge = smoothstep(stopLeft - edgeSize, stopLeft + edgeSize, vUv.x);
+              float centerEdge = smoothstep(stopCenter - edgeSize, stopCenter + edgeSize, vUv.x);
+              float rightEdge = smoothstep(stopRight - edgeSize, stopRight + edgeSize, vUv.x);
+
+              // Interpolate colors between stops (including alpha)
+              vec4 leftToCenter = mix(colorLeft, colorCenter, (vUv.x - stopLeft) / (stopCenter - stopLeft));
+              vec4 centerToRight = mix(colorCenter, colorRight, (vUv.x - stopCenter) / (stopRight - stopCenter));
+
+              // Combine interpolations smoothly using smoothstep results
+              vec4 color = mix(
+                  mix(colorLeft, leftToCenter, leftEdge),
+                  mix(centerToRight, colorRight, rightEdge),
+                  step(stopCenter, vUv.x)
+              );
+
+              // Apply global opacity multiplier
+              color.a *= uOpacity;
+
+              // Discard fully transparent pixels for performance
+              if (color.a < 0.001) discard;
+
+              gl_FragColor = color;
+          }
+
+        `,
       });
-      group.add(new THREE.Mesh(geometry, material));
+      const mesh = new THREE.Mesh(geometry, material);
+      group.add(mesh);
     });
   });
 
+  // Scale, flip, center
   group.scale.setScalar(SETTINGS.svgScale);
   group.scale.y *= -1;
 
   const box = new THREE.Box3().setFromObject(group);
   const center = box.getCenter(new THREE.Vector3());
   group.position.sub(center);
-  group.position.z = zPos;
-  group.opacityCap = opacityCap;
 
+  group.position.z = zPos;
   scene.add(group);
+
+  group.opacityCap = opacityCap;
   vectors.push(group);
 }
 
@@ -403,7 +616,6 @@ async function init() {
   }
 
   animationTimeline = gsap.timeline({ paused: true });
-  const easeQuartOut = (t) => 1 - Math.pow(1 - t, 4);
 
   // ========== REVEAL ANIMATION ==========
   animationTimeline.to(
@@ -418,51 +630,24 @@ async function init() {
     },
     "init"
   );
-  // ========== BLOB 1 ANIMATION ==========
-  animationTimeline.to(
-    blobMaterial.uniforms.blob1.value,
-    {
-      y: blob1EndY,
-      duration: 1.8,
-      ease: "expo.out",
-    },
-    "init+=0.5"
-  );
-  // ========== BLOB 2 ANIMATION ==========
-  animationTimeline.to(
-    blobMaterial.uniforms.blob2.value,
-    {
-      y: blob2EndY,
-      duration: 1.5,
-      ease: "expo.out",
-    },
-    "init+=0.8"
-  );
   animationTimeline.addLabel("blobEnd");
   // ========== INFINITE TUNNEL ANIMATION ==========
   animationTimeline.to(
-    { progress: 0 },
+    camera.position,
     {
-      progress: 1,
+      z: cameraEndZ,
       duration: SETTINGS.duration,
-      ease: "none",
-      onUpdate() {
-        const eased = easeQuartOut(this.targets()[0].progress);
-        camera.position.z = THREE.MathUtils.lerp(
-          cameraStartZ,
-          cameraEndZ,
-          eased
-        );
-        updateSvgOpacity();
-      },
+      ease: "expo.out",
+      onUpdate: updateSvgOpacity
     },
-    "init+=0.5"
+    "init+=0.25"
   );
 
+  // ========== LANDING HERO ANIMATION IN ==========
   animationTimeline.to(
     "[data-hero='content']", 
     {
-      duration: 3, 
+      duration: 2, 
       x: 0, 
       y:0, 
       z: 0, 
@@ -474,27 +659,28 @@ async function init() {
     {
       duration: 1,
       filter:"blur(0px)", 
-      opacity: 1, 
+      opacity: 1,
+      ease: "expo.out"
     },
-    "init+=1"
+    "init+=1.7"
   );
 
-  // ========== BLOB 1 ANIMATION OUT ==========
+  // ========== RECT TOP ANIMATION OUT ==========
   animationTimeline.to(
-    blobMaterial.uniforms.blob1.value,
+    bgGradientMaterial.uniforms.topRectCenterY,
     {
-      y: -0.7,
+      value: 1.0 - rectCenterEnd,
       duration: 1,
       ease: "expo.in",
     },
     // "init+=2.3"
     "blobEnd"
   );
-  // ========== BLOB 2 ANIMATION OUT ==========
+  // ========== RECT BOT ANIMATION OUT ==========
   animationTimeline.to(
-    blobMaterial.uniforms.blob2.value,
+    bgGradientMaterial.uniforms.bottomRectCenterY,
     {
-      y: -0.8,
+      value: rectCenterEnd,
       duration: 1.2,
       ease: "expo.in",
     },
@@ -502,39 +688,57 @@ async function init() {
     "blobEnd"
   );
 
+  // ========== FISH EYE BULGE ==========
+  animationTimeline.to(postProcessMaterial.uniforms.uBulge, {
+    value: 0.8,
+    duration: 1.5,
+    ease: "expo.out"
+  }, "init+=0.5");
+
   animate();
 }
 
 // ==============================
 // UPDATE SVG OPACITY
 // ==============================
-function updateSvgOpacity() {
-  vectors.forEach((vector) => {
-    const distance = Math.abs(camera.position.z - vector.position.z);
-    let opacity = 0;
-    if (distance <= SETTINGS.fade.start) {
-      const t = THREE.MathUtils.clamp(
-        1 -
-          (distance - SETTINGS.fade.end) /
-            (SETTINGS.fade.start - SETTINGS.fade.end),
-        0,
-        1
+  function updateSvgOpacity() {
+    vectors.forEach((vector) => {
+      const distance = Math.abs(camera.position.z - vector.position.z);
+      let opacity = 0;
+  
+      if (distance <= SETTINGS.fade.start) {
+        const t = THREE.MathUtils.clamp(
+          1 - (distance - SETTINGS.fade.end) /
+              (SETTINGS.fade.start - SETTINGS.fade.end),
+          0,
+          1
+        );
+        opacity = THREE.MathUtils.smoothstep(t, 0, 1);
+      }
+  
+      vector.children.forEach(
+        child =>
+          child.material.uniforms.uOpacity.value =
+            opacity * vector.opacityCap
       );
-      opacity = THREE.MathUtils.smoothstep(t, 0, 1);
-    }
-    vector.children.forEach(
-      (child) =>
-        child.material && (child.material.opacity = opacity * vector.opacityCap)
-    );
-  });
-}
+    });
+  }
 
 // ==============================
 // RENDER LOOP
 // ==============================
 function animate() {
   requestAnimationFrame(animate);
+
+  // Render main scene to render target
+  renderer.setRenderTarget(renderTarget);
   renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+
+  // Pass the render target texture to post-process shader
+  postProcessMaterial.uniforms.tDiffuse.value = renderTarget.texture;
+
+  renderer.render(postProcessScene, postCamera);
 }
 
 // ==============================
@@ -543,10 +747,8 @@ function animate() {
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  blobMaterial.uniforms.uResolution.value.set(
-    window.innerWidth,
-    window.innerHeight
-  );
+  postProcessMaterial.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+  bgGradientMaterial.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -582,20 +784,22 @@ function autoCompletePeel(peelInstance, { x, y }, WIDTH, HEIGHT) {
   tl.to(
     "[data-zoom-wrapper]",
     {
-      duration: 2.5,
+      duration: 2,
       y: "-18vh",
       z: "999",
       ease: "power4.in",
     },
-    "<" // start simultaneously with last animation
+    0 // start simultaneously with last animation
   ).to("[data-zoom-wrapper]", {
     ease: "none",
     duration: 0,
     opacity: 0,
     display: "none",
-  });
+  },
+    2
+  );
 
   // Start the main camera + SVG animation after peel finishes
-  tl.add(() => animationTimeline.play(), "-=0.5");
+  tl.add(() => animationTimeline.play(), 1.5);
   
 }
