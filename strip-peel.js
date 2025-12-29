@@ -123,12 +123,36 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 
-const cameraStartZ = 15;
+// ==============================
+// SETTINGS
+// ==============================
+const cameraOffset = 20; //20 was
 const vectorCount = 16;  //8 was
 const vectorSpacing =  18;
+
+const SETTINGS = {
+  svgScale: 0.1,
+  fade: { start: 60, end: 5 },
+  tail: { count: 6, maxOpacity: 1, minOpacity: 0.15 },
+  duration: 7, //7 was
+};
+
+const svgVariants = [
+  // "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16290488876912b288_vector-stroke-1.svg",
+  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb163e95ff2ab066a62f_vector-stroke-2.svg",
+  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16b352d21ee4e6708d_vector-stroke-3.svg",
+  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16c941d26634d897ec_vector-stroke-4.svg",
+  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16e2e7cd332e3cacd1_vector-stroke-5.svg",
+  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16b7382c9c9e34d0fd_vector-stroke-6.svg",
+];
+
+const vectors = [];
+const svgCache = {};
+
+/* const cameraStartZ = 15;
 const lastVectorZ = -(vectorCount - 1) * vectorSpacing;
 const cameraEndZ = lastVectorZ - 40; // buffer past last SVG
-camera.position.z = cameraStartZ;
+camera.position.z = cameraStartZ; */
 
 // ==============================
 // GRADIENT MATERIAL
@@ -430,25 +454,6 @@ renderer.setClearColor(0x120c01, 1);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-const SETTINGS = {
-  svgScale: 0.1,
-  fade: { start: 60, end: 5 },
-  tail: { count: 6, maxOpacity: 1, minOpacity: 0.15 },
-  duration: 8, //7 was
-};
-
-const svgVariants = [
-  // "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16290488876912b288_vector-stroke-1.svg",
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb163e95ff2ab066a62f_vector-stroke-2.svg",
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16b352d21ee4e6708d_vector-stroke-3.svg",
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16c941d26634d897ec_vector-stroke-4.svg",
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16e2e7cd332e3cacd1_vector-stroke-5.svg",
-  "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/694bbb16b7382c9c9e34d0fd_vector-stroke-6.svg",
-];
-
-const vectors = [];
-const svgCache = {};
-
 // ==============================
 // SVG CACHE LOADER
 // ==============================
@@ -615,6 +620,30 @@ async function init() {
     await createSVGMesh(-i * vectorSpacing, i);
   }
 
+  // ==============================
+  // CAMERA POSITIONING (NEW)
+  // ==============================
+
+  const firstVectorZ = vectors[0].position.z;
+  const lastVectorZ = vectors[vectors.length - 1].position.z;
+
+  // Start camera slightly in front of first vector
+  const cameraStartZ = firstVectorZ + cameraOffset;
+
+  // End camera slightly behind last vector
+  const cameraEndZ = lastVectorZ - cameraOffset;
+
+  camera.position.z = cameraStartZ;
+  updateSvgOpacity();
+
+  // Total travel distance (for clarity/debugging)
+  const cameraTravelDistance = Math.abs(cameraStartZ - cameraEndZ);
+
+  console.log("Camera travel distance:", cameraTravelDistance);
+
+  // ==============================
+  // GSAP TIMELINE
+  // ==============================
   animationTimeline = gsap.timeline({ paused: true });
 
   // ========== REVEAL ANIMATION ==========
@@ -638,7 +667,8 @@ async function init() {
       z: cameraEndZ,
       duration: SETTINGS.duration,
       ease: "expo.out",
-      onUpdate: updateSvgOpacity
+      onUpdate: updateSvgOpacity,
+      onComplete: () => {console.log("ended")}
     },
     "init+=0.25"
   );
