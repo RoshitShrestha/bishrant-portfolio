@@ -97,16 +97,17 @@ export function createTimelines(updateSvgOpacity) {
 
   // HERO CONTENT TIMELINE
   heroContentTimeline = gsap.timeline({ paused: true, onComplete: () => unlockScroll() });
+  gsap.set("[data-hero='content']", { autoAlpha: 1 });
 
   heroContentTimeline.from(
     "[data-hero='content']",
     {
-      duration: 2,
+      duration: 1.5,
       x: "-100%",
       y: 0,
       z: 500,
       scale: 1,
-      ease: "expo.out",
+      ease: "power3.out",
       stagger: { each: 0.08, from: "start" },
     },
     0
@@ -114,22 +115,21 @@ export function createTimelines(updateSvgOpacity) {
   heroContentTimeline.from(
     "[data-hero-element='scroll-hint']",
     {
-      duration: 2,
+      duration: 1.5,
       x: "150%",
       y: "-250%",
       scale: 1.5,
-      ease: "expo.out",
+      ease: "power3.out",
     },
     0
   );
-
   heroContentTimeline.from(
     "[data-hero='content']",
     {
       duration: 1,
       filter: "blur(20px)",
       opacity: 0,
-      ease: "expo.out",
+      ease: "power3.out",
       stagger: { each: 0.08, from: "start" },
     },
     0
@@ -140,7 +140,7 @@ export function createTimelines(updateSvgOpacity) {
       duration: 1,
       filter: "blur(20px)",
       opacity: 0,
-      ease: "expo.out",
+      ease: "power3.out",
     },
     0
   );
@@ -148,12 +148,12 @@ export function createTimelines(updateSvgOpacity) {
   heroContentTimeline.from(
     "[data-navbar]",
     {
-      duration: 2,
+      duration: 1.5,
       y: "-120%",
       scale: 1.5,
-      ease: "expo.out",
+      ease: "power3.out",
     },
-    0.3
+    0.1
   );
   heroContentTimeline.from(
     "[data-navbar]",
@@ -161,32 +161,30 @@ export function createTimelines(updateSvgOpacity) {
       duration: 1,
       filter: "blur(20px)",
       opacity: 0,
-      ease: "expo.out",
+      ease: "power3.out",
     },
-    0.3
+    0.2
   );
 
   heroContentTimeline.add(() => {
     heroGradientMesh.visible = true;
     heroGradientUniforms.u_isPaused.value = 0;
-  }, 1.1);
+  }, 0.2);
 
   heroContentTimeline.fromTo(
     heroGradientUniforms.u_opacity,
     { value: 0 },
     {
       value: 1,
-      duration: 2,
-      ease: "sine.out",
+      duration: 1.5,
+      ease: "power3.in",
     },
-    1.2
+    0.2
   );
 
   
 
   setupHeroScrollTimeline();
-
-  // GSDevTools.create({animation: heroContentTimeline});
 }
 
 function setupHeroScrollTimeline() {
@@ -202,6 +200,7 @@ function setupHeroScrollTimeline() {
   const heroDescriptionSplit = new SplitText(heroDescription, {
     type: "words",
     wordsClass: "hero-desc-word",
+    tag: "span",
   });
   const heroDescriptionEl = heroDescription.querySelectorAll(
     ".hero-desc-word, .u-text-style-highlight"
@@ -225,14 +224,14 @@ function setupHeroScrollTimeline() {
       opacity: 0,
       filter: "blur(20px)",
       ease: "none",
-    }, 0.01)
+    }, 0.05)
     .to(heroButton, {
       yPercent: -100,
       opacity: 0,
       filter: "blur(20px)",
       stagger: { from: "end", each: 0.01 },
       ease: "none",
-    }, 0.01)
+    }, 0.05)
     .to(heroDescriptionEl, {
       yPercent: -100,
       opacity: 0,
@@ -271,4 +270,6 @@ function setupHeroScrollTimeline() {
       heroMaskMaterial.uniforms.uProgress.value = self.progress;
     },
   });
+
+  // GSDevTools.create({animation: heroTl}); 
 }

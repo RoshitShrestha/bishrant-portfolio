@@ -5,7 +5,7 @@
 import * as THREE from "three";
 
 export const renderTarget = new THREE.WebGLRenderTarget(
-  window.innerWidth,
+  window.innerWidth, //clientWidth
   window.innerHeight
 );
 

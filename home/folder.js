@@ -40,7 +40,7 @@ const createTimeline = () => {
         trigger: section,
         start: "top top",
         end: "bottom top",
-        scrub: true,
+        scrub: 0.2, // Smooth scrubbing (1 second lag) for better performance
         pin: pinEl,
 				// markers: true,
 				pinSpacing: false,
@@ -138,6 +138,7 @@ const createTimeline = () => {
           duration: 0.5,
           ease: "back.out(2)",
           overwrite: "auto",
+          force3D: true, // GPU acceleration
         });
         gsap.to(cardFolderHoverBg, {
           opacity: 1,
@@ -174,6 +175,7 @@ const createTimeline = () => {
         duration: 0.5,
         ease: "power3.inOut",
         overwrite: "auto",
+        force3D: true, // GPU acceleration
       });
       gsap.to(cardFolderHoverBg, {
         opacity: 0,
@@ -207,21 +209,23 @@ const createTimeline = () => {
           scale: `${scaleFactor + 0.35}`,
           duration: 0.8,
           ease: "back.out(1.7)",
+          force3D: true, // GPU acceleration
         },
         `textEnd+=${i * 0.05}`,
       );
     });
     cards.forEach((card, i) => {
+      const targetY = `${(cardParents.length - i) * -3 - 6}%`;
+      // Calculate and store baseY immediately (target value after animation)
+      baseY.set(card, parseFloat(targetY));
       mainTl.fromTo(
         card,
         { y: 0 },
         {
-          y: `${(cardParents.length - i) * -3 - 6}%`,
+          y: targetY,
           duration: 0.6,
           ease: "back.out(1.7)",
-          onUpdate: () => {
-            baseY.set(card, gsap.getProperty(card, "y") || 0);
-          },
+          force3D: true, // GPU acceleration
         },
         `textEnd+=${i * 0.05}`,
       );
@@ -264,8 +268,10 @@ const createTimeline = () => {
           fitChild: ".home-project__card",
           absolute: true,
           scale: true,
-          simple: true,
+          simple: true, // Use simple mode for better performance
           ease: "power3.inOut",
+          force3D: true, // GPU acceleration
+          immediateRender: false, // Don't render until needed
         }),
         mainTl.labels.initial + i * 0.1,
       );
@@ -276,6 +282,7 @@ const createTimeline = () => {
           y: 0,
           duration: 0.8,
           ease: "power3.inOut",
+          force3D: true, // GPU acceleration
         },
         mainTl.labels.initial + i * 0.1,
       );
@@ -355,6 +362,7 @@ const createTimeline = () => {
           ease: "back.out(1.7)",
           delay: fileIndex * 0.025,
           overwrite: "auto",
+          force3D: true, // GPU acceleration
         });
       });
 
@@ -363,6 +371,7 @@ const createTimeline = () => {
         scale: 1,
         ease: "power1.inOut",
         duration: 0.3,
+        force3D: true, // GPU acceleration
       })
       gsap.to(cardFolderHoverBg, {
         opacity: 0,
@@ -423,6 +432,7 @@ const createTimeline = () => {
             ease: "back.out(1.7)",
             delay: fileIndex * 0.025,
             overwrite: "auto",
+            force3D: true, // GPU acceleration
           });
         });
 
@@ -431,6 +441,7 @@ const createTimeline = () => {
           scale: 1.05,
           ease: "power1.inOut",
           duration: 0.3,
+          force3D: true, // GPU acceleration
         })
         gsap.to(cardFolderHoverBg, {
           opacity: 1,
@@ -488,8 +499,10 @@ const createTimeline = () => {
           fitChild: ".home-project__card",
           absolute: true,
           scale: true,
-          simple: true,
+          simple: true, // Use simple mode for better performance
           ease: "power3.in",
+          force3D: true, // GPU acceleration
+          immediateRender: false, // Don't render until needed
         }),
         mainTl.labels.final + i * 0.1,
       );
@@ -501,6 +514,7 @@ const createTimeline = () => {
           rotation: targetRotation,
           duration: 0.4,
           ease: "power3.in",
+          force3D: true, // GPU acceleration
         },
         mainTl.labels.final + i * 0.1,
       );

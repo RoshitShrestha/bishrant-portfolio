@@ -23,5 +23,5 @@ export function isInternalNavigation() {
   }
 }
 
-// export const skipIntro = isInternalNavigation();
-export const skipIntro = true;
+export const skipIntro = isInternalNavigation();
+// export const skipIntro = true;

@@ -38,7 +38,7 @@ const createTimeline = () => {
         end: "bottom 20%",
         scrub: true,
         pin: true,
-        markers: true,
+        // markers: true,
       },
     });
     

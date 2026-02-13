@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
+
 gsap.registerPlugin(MotionPathPlugin, SplitText, ScrollTrigger);
 
 // disc array
