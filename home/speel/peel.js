@@ -56,11 +56,23 @@ function autoCompletePeel(peelInstance, { x, y }, WIDTH, HEIGHT) {
 const SVG_SIZE = { width: 1341, height: 111 };
 
 let stripHTMLCache = "";
+let currentStripPeel = null;
+let currentStripMouseEnter = null;
+let currentStripMouseLeave = null;
 
 export function handleResize() {
   let didDrag = false;
   const peelEl = document.querySelector("#strip");
   if (!peelEl) return;
+
+  if (currentStripPeel) {
+    if (currentStripMouseEnter) peelEl.removeEventListener("mouseenter", currentStripMouseEnter);
+    if (currentStripMouseLeave) peelEl.removeEventListener("mouseleave", currentStripMouseLeave);
+    currentStripPeel.remove?.();
+    currentStripPeel = null;
+    currentStripMouseEnter = null;
+    currentStripMouseLeave = null;
+  }
 
   if (!stripHTMLCache) {
     stripHTMLCache = peelEl.innerHTML;
@@ -91,6 +103,7 @@ export function handleResize() {
     backReflectionAlpha: 0.3,
   });
   peel.setMode("book");
+  currentStripPeel = peel;
 
   const initialPos = { x: WIDTH, y: HEIGHT / 2 };
   const hoverPos = { x: WIDTH * 0.98, y: HEIGHT * 0.4 };
@@ -110,8 +123,10 @@ export function handleResize() {
     peel.setPeelPosition(WIDTH, HEIGHT / 2)
   );
 
-  peelEl.addEventListener("mouseenter", () => stripHoverEnabled && peelHoverTL.play());
-  peelEl.addEventListener("mouseleave", () => stripHoverEnabled && peelHoverTL.reverse());
+  currentStripMouseEnter = () => stripHoverEnabled && peelHoverTL.play();
+  currentStripMouseLeave = () => stripHoverEnabled && peelHoverTL.reverse();
+  peelEl.addEventListener("mouseenter", currentStripMouseEnter);
+  peelEl.addEventListener("mouseleave", currentStripMouseLeave);
 
   peel.handleDrag(function (_, x, y) {
     didDrag = true;
@@ -159,7 +174,16 @@ export function handleResize() {
 
 // ——— Independent setup for .peel-sticker elements (no relation to #strip) ———
 // Call after intro is visible (e.g. from main.js load handler) so stickers have real dimensions.
+let _stickerCleanups = [];
+
+export function disposeStickerPeels() {
+  _stickerCleanups.forEach((fn) => fn());
+  _stickerCleanups = [];
+}
+
 export function initStickerPeels() {
+  disposeStickerPeels();
+
   if (typeof CustomEase === "undefined") return;
   CustomEase.create("sticker", "M0,0 C0.31,0.73 0.84,0.27 1,1");
 
@@ -256,5 +280,12 @@ export function initStickerPeels() {
 
     p.el.addEventListener("mouseenter", onMouseEnter);
     p.el.addEventListener("mouseleave", onMouseLeave);
+
+    _stickerCleanups.push(() => {
+      p.el.removeEventListener("mouseenter", onMouseEnter);
+      p.el.removeEventListener("mouseleave", onMouseLeave);
+      tween.kill();
+      p.remove?.();
+    });
   });
 }

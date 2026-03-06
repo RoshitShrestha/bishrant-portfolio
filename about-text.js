@@ -2,7 +2,28 @@ gsap.registerPlugin(ScrollTrigger, Observer);
 
 let flipCtx;
 
+function loaderGridAnimation() {
+  const loadGrid = document.querySelector("[data-load-grid]");
 
+  if (!loadGrid) return Promise.resolve();
+
+  let q = gsap.utils.selector(loadGrid);
+
+  return new Promise((resolve) => {
+    gsap.to(
+      q(".load_grid-item"), 
+      {
+        opacity: 0,
+        duration: 0.001,
+        stagger: { amount: 0.75, from: "random"},
+        onComplete: () => {
+          gsap.set(loadGrid, { display: "none" });
+          resolve();
+        },
+      },
+    );
+  });
+}
 
 const createTimeline = () => {
   flipCtx && flipCtx.revert();
@@ -80,7 +101,10 @@ const createTimeline = () => {
           }, 0
         );
 
-        // GSDevTools.create({ animation: heroTl });
+      });
+
+      // GSDevTools.create({ animation: heroTl });
+      loaderGridAnimation().then(() => {
         heroTl.play();
       });
     });
@@ -105,7 +129,7 @@ const createTimeline = () => {
         trigger: expScrollTrack,
         start: "top 60%",
         end: "bottom bottom",
-        toggleActions: "play none none reverse",
+        // toggleActions: "play none none reverse",
         // scrub: true,
         // pin: true,
         // markers: true,
@@ -155,7 +179,7 @@ const createTimeline = () => {
         trigger: valuesSection,
         start: "top 60%",
         end: "bottom bottom",
-        toggleActions: "play none none reverse",
+        // toggleActions: "play none none reverse",
         // scrub: true,
         // markers: true,
       },
@@ -185,7 +209,7 @@ const createTimeline = () => {
       scrollTrigger: {
         trigger: valuesDescription,
         start: "top 70%",
-        toggleActions: "play none none reverse",
+        // toggleActions: "play none none reverse",
         // markers: true,
       }
     })
@@ -222,7 +246,7 @@ window.addEventListener(
   "resize",
   debounce(() => {
     ScrollTrigger.refresh();
-    createTimeline();
+    // createTimeline();
   }, 150),
 );
 

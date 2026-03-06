@@ -32,14 +32,20 @@ const createTimeline = () => {
       "[data-home-project='initial-box']",
     );
     const finalBox = document.querySelector("[data-home-project='final-box']");
+    const title = document.querySelector("[data-home-project='title']");
 
     let scaleFactor = 1;
 
     if (cards.length) {
+      // scaleFactor = cardWrapper.offsetWidth / cards[0].offsetWidth;
       scaleFactor = Math.round(
         (cardWrapper.offsetWidth / cards[0].offsetWidth) * 100
       ) / 100;
     }
+
+    const titleSplit = new SplitText(title, {
+      type: "words",
+    });
 
     const mainTl = gsap.timeline({
       scrollTrigger: {
@@ -48,18 +54,48 @@ const createTimeline = () => {
         end: "bottom top",
         pin: pinEl,
         scrub: true,
+				// markers: true,
 				pinSpacing: false,
-        invalidateOnRefresh: true, // REQUIRED for Flip
+        invalidateOnRefresh: true, // 👈 REQUIRED for Flip
         anticipatePin: 1,  
-        // markers: true,
       },
     });
 
     const finalState = Flip.getState(finalBox);
+
+    // ========== TITLE ANIMATION ========== //
+    mainTl.from(titleSplit.words, {
+      yPercent: -30,
+      opacity: 0,
+      filter: "blur(20px)",
+      duration: 0.2,
+      stagger: { each: 0.05 },
+      ease: "none",
+    });
+
+    mainTl.addLabel("textEnter", "+=0.3");
+
+    mainTl.to(
+      titleSplit.words,
+      {
+        // yPercent: -30,
+        opacity: 0,
+        filter: "blur(20px)",
+        // stagger: { start: "end", each: 0.01 },
+        ease: "none",
+        // duration: 0.2,
+        duration: 0.4,
+      },
+      "textEnter",
+    );
     
+
+    mainTl.addLabel("textEnd");
+
     // ========== REMOVING HOVER ON SCROLL ========== //
     let hoveredCard = null;
     let hoveredCardParent = null;
+    let isScrolling = false;
 
     function resetCardIfHovered() {
       if (hoveredCard) resetCard(hoveredCard);
@@ -101,6 +137,48 @@ const createTimeline = () => {
 
     // ========== CARD ENTRY HOVER ========== //
     let baseY = new Map();
+    /* cards.forEach((card, i) => {
+      const cardFolderHoverBg = card.querySelector("[data-folder-bg = 'hover']");
+      const cardFolderTag = card.querySelector("[data-folder = 'tag']");
+      const cardFolderDesc = card.querySelector("[data-folder = 'description']");
+
+      if (!card.classList.contains("is-interactive")) return;
+      const hoverOffset = -4.5;
+
+      card.addEventListener("mouseenter", () => {
+        if (!card.classList.contains("is-interactive")) return;
+
+        hoveredCard = card;
+
+        gsap.to(card, {
+          y: `${baseY.get(card) + hoverOffset}%`,
+          duration: 0.5,
+          ease: "back.out(2)",
+          overwrite: "auto",
+          force3D: true, // GPU acceleration
+        });
+        gsap.to(cardFolderHoverBg, {
+          opacity: 1,
+          ease: "power1.inOut",
+          duration: 0.3,
+        })
+        gsap.to(cardFolderTag, {
+          backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)",
+          // color: "#FFEBB6",
+          ease: "power1.inOut",
+          duration: 0.3,
+        })
+        gsap.to(cardFolderDesc, {
+          color: "#FFEBB6",
+          ease: "power1.inOut",
+          duration: 0.3,
+        })
+      });
+
+      card.addEventListener("mouseleave", () => {
+        resetCard(card);
+      });
+    }); */
 
     function resetCard(card) {
       const cardFolderHoverBg = card.querySelector("[data-folder-bg = 'hover']");
@@ -114,6 +192,7 @@ const createTimeline = () => {
         duration: 0.5,
         ease: "power3.inOut",
         overwrite: "auto",
+        force3D: true, // GPU acceleration
       });
       gsap.to(cardFolderHoverBg, {
         opacity: 0,
@@ -137,6 +216,8 @@ const createTimeline = () => {
       }
     }
     
+    // gsap.set(cardParents, { scale: `${scaleFactor + 2}` });
+
     // ========== CARDS ENTRY ========== //
     cardParents.forEach((cardParent, i) => {
       mainTl.fromTo(
@@ -146,7 +227,8 @@ const createTimeline = () => {
           scale: scaleFactor + 0.35,
           duration: 0.8,
           ease: "back.out(1.7)",
-        }, i * 0.05
+        },
+        `textEnter+=${i * 0.05}`,
       );
     });
     cards.forEach((card, i) => {
@@ -160,11 +242,33 @@ const createTimeline = () => {
           y: targetY,
           duration: 0.6,
           ease: "back.out(1.7)",
-        }, i * 0.05
+          // force3D: true, // GPU acceleration
+        },
+        `textEnter+=${i * 0.05}`,
       );
     });
 
+    // mainTl.set(cards, { pointerEvents: "auto" });
+
     mainTl.addLabel("initial", "+=0.3");
+
+    // DISABLING HOVER WHILE ANIMATING
+    // mainTl.set(cards, { pointerEvents: "none" }, mainTl.labels.initial - 0.2);
+
+    // ========== REMOVE HOVER ========== //
+    /* mainTl.to(
+      {},
+      {
+        duration: 0.001,
+        onStart: () => {
+          cards.forEach((card) => card.classList.remove("is-interactive"));
+        },
+        onReverseComplete: () => {
+          cards.forEach((card) => card.classList.add("is-interactive"));
+        },
+      },
+      mainTl.labels.initial + 0.1,
+    ); */
 
     // ========== CARD PLACE ========== //
     cardParents.forEach((cardParent, i) => {
@@ -245,7 +349,7 @@ const createTimeline = () => {
       );
     });
 
-    mainTl.addLabel("final", "+=0.1");
+    mainTl.addLabel("final", "+=0.3");
 
     // ========== CARD PLACE HOVER ========== //
     function resetCardParent(cardParent) {
@@ -300,9 +404,6 @@ const createTimeline = () => {
         hoveredCardParent = null;
       }
     }
-
-    // Run once on initial load to enforce default non-hover state.
-    cardParents.forEach((cardParent) => resetCardParent(cardParent));
 
 		cardParents.forEach((cardParent, i) => {
       const previewFiles = cardParent.querySelectorAll(".folder__preview__file");
@@ -432,8 +533,6 @@ const createTimeline = () => {
         mainTl.labels.final + i * 0.1,
       );
     });
-
-    // GSDevTools.create({animation: mainTl});
   });
 };
 

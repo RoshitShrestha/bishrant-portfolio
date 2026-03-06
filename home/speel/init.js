@@ -10,17 +10,26 @@ import { introGradientMaterial } from "./three/introMaterials.js";
 import { heroGradientUniforms, heroGradientMesh, heroScene, heroCamera } from "./three/heroScene.js";
 import { loadSVGCached, createSVGMesh } from "./three/svgMeshes.js";
 import { updateSvgOpacity } from "./three/updateSvgOpacity.js";
-import { createTimelines, getIntroTimeline, getHeroContentTimeline } from "./timelines.js";
+import { createTimelines, getIntroTimeline, getHeroContentTimeline, disposeTimelines } from "./timelines.js";
 import { setPeelIntroTimeline } from "./peel.js";
 import { skipIntro } from "./navigation.js";
 import { vectorCount, vectorSpacing, svgVariants } from "./config.js";
 
 let heroContentTimeline;
+let _rafId = null;
+let _resizeBound = null;
+
 
 export function startDirectHeroEntry() {
   heroGradientMesh.visible = true;
+  heroGradientUniforms.u_isPaused.value = 0;
+  heroGradientUniforms.u_opacity.value = 1;
   heroContentTimeline = getHeroContentTimeline();
-  heroContentTimeline.play();
+  
+  // playing heroContentTimeline instantly
+  if (heroContentTimeline) {
+    heroContentTimeline.progress(1).pause();
+  }
 }
 
 export async function init() {
@@ -43,14 +52,41 @@ export async function init() {
   setupResize();
 }
 
+export function dispose() {
+  if (_rafId != null) {
+    cancelAnimationFrame(_rafId);
+    _rafId = null;
+  }
+  if (_resizeBound && typeof window !== "undefined") {
+    window.removeEventListener("resize", _resizeBound);
+    _resizeBound = null;
+  }
+
+  disposeTimelines();
+
+  vectors.forEach((group) => {
+    group.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  });
+  vectors.length = 0;
+
+  scene.clear();
+  heroScene.clear();
+
+  renderTarget.dispose();
+  renderer.dispose();
+}
+
 const clock = new THREE.Clock();
 
 function animate() {
-  requestAnimationFrame(animate);
+  _rafId = requestAnimationFrame(animate);
 
   if (heroGradientUniforms.u_isPaused.value === 0) {
     const elapsed = clock.getElapsedTime();
-    heroGradientUniforms.u_time.value = elapsed + 100; // Normal time progression
+    heroGradientUniforms.u_time.value = elapsed + 100;
   }
 
   renderer.setRenderTarget(renderTarget);
@@ -67,7 +103,7 @@ function animate() {
 }
 
 export function setupResize() {
-  window.addEventListener("resize", () => {
+  _resizeBound = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     postProcessMaterial.uniforms.uResolution.value.set(
@@ -79,5 +115,6 @@ export function setupResize() {
       window.innerHeight
     );
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  };
+  window.addEventListener("resize", _resizeBound);
 }

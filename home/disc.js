@@ -34,7 +34,7 @@ const discs = [
     position: {
       start: { x: 0.05, y: 0.65, z: 5 },
       end: { x: -0.52, y: -0.1, z: -0.43 },
-      exit: { x: -0.9, y: 1.4, z: 2.35 },
+      exit: { x: -0.9, y: 1.5, z: 2.35 },
     },
     rotation: {
       start: { x: -0.15, y: 0.1, z: -0.3 },
@@ -86,7 +86,7 @@ const discs = [
     position: {
       start: { x: -1.8, y: -0.85, z: 5.8 },
       end: { x: -0.95, y: -0.82, z: -0.04 },
-      exit: { x: -1.6, y: 1.3, z: 2.5 },
+      exit: { x: -1.5, y: 1.5, z: 2.5 },
     },
     rotation: {
       start: { x: 1.05, y: -0.3, z: 0.3 },
@@ -103,7 +103,7 @@ const discs = [
     position: {
       start: { x: 0.2, y: -1.35, z: 6.6 },
       end: { x: -0.05, y: -1, z: 0.25 },
-      exit: { x: -0.25, y: 1.25, z: 3 },
+      exit: { x: -0.25, y: 1.45, z: 3 },
     },
     rotation: {
       start: { x: 0.4, y: 0.5, z: 0.6 },
@@ -133,6 +133,7 @@ const discs = [
 export default class Sketch {
   constructor(options) {
     this.scene = new THREE.Scene();
+    this.mm = gsap.matchMedia();
 
     this.container = options.dom;
     this.width = this.container.offsetWidth;
@@ -151,11 +152,11 @@ export default class Sketch {
     // WebGL context loss/restore: avoid black screen and missing text after restore
     this.contextLost = false;
     const canvas = this.renderer.domElement;
-    canvas.addEventListener("webglcontextlost", (event) => {
+    this._onContextLost = (event) => {
       event.preventDefault();
       this.contextLost = true;
-    }, false);
-    canvas.addEventListener("webglcontextrestored", () => {
+    };
+    this._onContextRestored = () => {
       this.contextLost = false;
       // Re-upload canvas textures so text meshes appear again
       if (this.chromeStickerMaterials && this.chromeStickerMaterials.length > 0) {
@@ -164,7 +165,9 @@ export default class Sketch {
         });
       }
       this.render();
-    }, false);
+    };
+    canvas.addEventListener("webglcontextlost", this._onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", this._onContextRestored, false);
 
     this.camera = new THREE.PerspectiveCamera(
       35,
@@ -173,7 +176,21 @@ export default class Sketch {
       1000
     );
 
-    this.camera.position.set(0, 0, 4.9);
+    // this.camera.position.set(0, 0, 4.9);
+
+    this.mm.add({
+      isDesktop: "(min-height: 1080px)", // arbitrarily named conditions
+      isMobile: "(max-height: 1079px)"
+    }, (context) => {
+      let { isDesktop, isMobile } = context.conditions;
+      
+      if (isDesktop) {
+        this.camera.position.set(0, 0, 4.9);
+      } else if (isMobile) {
+        this.camera.position.set(0, 0, 5.5);
+      }
+    });
+
 
     this.isPlaying = true;
     this.isScrolling = false;
@@ -197,11 +214,25 @@ export default class Sketch {
     this.relativeMouseX = 0;
     this.relativeMouseY = 0;
 
+    // Pre-allocated vectors to avoid GC pressure in mousemove
+    this._discCenter = new THREE.Vector3();
+    this._centerScreen = new THREE.Vector3();
+    this._intersectScreen = new THREE.Vector3();
+    this._discEdge = new THREE.Vector3();
+
     // Initialize planes array (will be populated after font loads)
     this.planes = [];
 
     // Font loading flag
     this.customFontLoaded = false;
+
+    this._boundResize = this.resize.bind(this);
+    this._boundMouseMove = this.onMouseMove.bind(this);
+    this._boundMouseLeave = this.onMouseLeave.bind(this);
+    this._boundRender = this.render.bind(this);
+    this._scrollUnsubscribe = null;
+    this._scrollDelayedCall = null;
+    this._rafId = null;
 
     // Load custom font before creating objects
     this.loadCustomFont().then(() => {
@@ -218,23 +249,23 @@ export default class Sketch {
     this.setupMouseEvents();
 
     if (lenis) {
-      lenis.on("scroll", () => {
+      const onScroll = () => {
         this.isScrolling = true;
-
-        if (this.hoveredPlane) {
-          this.clearHoverOnScroll();
-        }
-
-        gsap.delayedCall(0.12, () => {
+        if (this.hoveredPlane) this.clearHoverOnScroll();
+        if (this._scrollDelayedCall) this._scrollDelayedCall.kill();
+        this._scrollDelayedCall = gsap.delayedCall(0.12, () => {
           this.isScrolling = false;
+          this._scrollDelayedCall = null;
         });
-      });
+      };
+      lenis.on("scroll", onScroll);
+      this._scrollUnsubscribe = () => lenis.off("scroll", onScroll);
     }
 
   }
 
   setupResize() {
-    window.addEventListener("resize", this.resize.bind(this));
+    window.addEventListener("resize", this._boundResize);
   }
 
   resize() {
@@ -249,8 +280,8 @@ export default class Sketch {
   }
 
   setupMouseEvents() {
-    this.container.addEventListener("mousemove", this.onMouseMove.bind(this));
-    this.container.addEventListener("mouseleave", this.onMouseLeave.bind(this));
+    this.container.addEventListener("mousemove", this._boundMouseMove);
+    this.container.addEventListener("mouseleave", this._boundMouseLeave);
   }
 
   onMouseMove(event) {
@@ -297,27 +328,21 @@ export default class Sketch {
         hitPlane.userData.currentTiltY = 0;
       }
 
-      // Get the intersection point in world space
       const intersectPoint = intersects[0].point;
 
-      // Get disc center in world space
-      const discCenter = new THREE.Vector3();
-      hitPlane.getWorldPosition(discCenter);
+      hitPlane.getWorldPosition(this._discCenter);
 
-      // Project both points to screen space
-      const centerScreen = discCenter.clone().project(this.camera);
-      const intersectScreen = intersectPoint.clone().project(this.camera);
+      this._centerScreen.copy(this._discCenter).project(this.camera);
+      this._intersectScreen.copy(intersectPoint).project(this.camera);
 
-      // Calculate relative position (-1 to 1) based on disc radius in screen space
-      const discRadius = 0.5; // world space radius
-      const discEdge = discCenter.clone();
-      discEdge.x += discRadius;
-      const edgeScreen = discEdge.project(this.camera);
-      const radiusScreen = Math.abs(edgeScreen.x - centerScreen.x);
+      const discRadius = 0.5;
+      this._discEdge.copy(this._discCenter);
+      this._discEdge.x += discRadius;
+      this._discEdge.project(this.camera);
+      const radiusScreen = Math.abs(this._discEdge.x - this._centerScreen.x);
 
-      // Calculate normalized position relative to center
-      this.relativeMouseX = (intersectScreen.x - centerScreen.x) / radiusScreen;
-      this.relativeMouseY = (intersectScreen.y - centerScreen.y) / radiusScreen;
+      this.relativeMouseX = (this._intersectScreen.x - this._centerScreen.x) / radiusScreen;
+      this.relativeMouseY = (this._intersectScreen.y - this._centerScreen.y) / radiusScreen;
 
       // Clamp to -1, 1 range
       this.relativeMouseX = Math.max(-1, Math.min(1, this.relativeMouseX));
@@ -687,9 +712,10 @@ export default class Sketch {
     const trigger = document.querySelector("[data-home-process='section']");
     const pinEl = document.querySelector("[data-home-process='pin']");
 
-    const titleSplit = new SplitText(title, {
+    this._titleSplit = new SplitText(title, {
       type: "words",
     });
+    const titleSplit = this._titleSplit;
 
     const tl = gsap.timeline({
       scrollTrigger: {
@@ -828,7 +854,7 @@ export default class Sketch {
             y: discData.position.end.y,
             z: discData.position.end.z,
             duration: discDuration,
-            ease: "sine.out",
+            ease: "power1.inOut",
           },
           startTime
         );
@@ -950,7 +976,7 @@ export default class Sketch {
 
   render() {
     if (this.contextLost) {
-      requestAnimationFrame(this.render.bind(this));
+      this._rafId = requestAnimationFrame(this._boundRender);
       return;
     }
     this.renderer.physicallyCorrectLights = true;
@@ -989,11 +1015,73 @@ export default class Sketch {
       );
     }
 
-    requestAnimationFrame(this.render.bind(this));
+    this._rafId = requestAnimationFrame(this._boundRender);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  dispose() {
+    this.isPlaying = false;
+    if (this._rafId != null) cancelAnimationFrame(this._rafId);
+    this._rafId = null;
+
+    window.removeEventListener("resize", this._boundResize);
+    if (this.container) {
+      this.container.removeEventListener("mousemove", this._boundMouseMove);
+      this.container.removeEventListener("mouseleave", this._boundMouseLeave);
+    }
+
+    const canvas = this.renderer.domElement;
+    if (canvas) {
+      canvas.removeEventListener("webglcontextlost", this._onContextLost);
+      canvas.removeEventListener("webglcontextrestored", this._onContextRestored);
+    }
+
+    if (typeof this._scrollUnsubscribe === "function") this._scrollUnsubscribe();
+    if (this._scrollDelayedCall) this._scrollDelayedCall.kill();
+
+    if (this.mm) this.mm.revert();
+
+    if (this._titleSplit) this._titleSplit.revert();
+
+    if (this.mainTimeline) {
+      if (this.mainTimeline.scrollTrigger) this.mainTimeline.scrollTrigger.kill();
+      this.mainTimeline.kill();
+    }
+
+    this.planes?.forEach((plane) => {
+      if (plane.userData.leaveAnimation) {
+        plane.userData.leaveAnimation.kill();
+        plane.userData.leaveAnimation = null;
+      }
+    });
+
+    this.geometry?.dispose();
+    this.material?.dispose();
+    if (this.envMap) this.envMap.dispose();
+    this.chromeStickerMaterials?.forEach((mat) => {
+      if (mat.map) mat.map.dispose();
+      mat.dispose();
+    });
+    this.chromeStickerMaterials = [];
+    this.planes?.forEach((plane) => {
+      plane.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (child.material.map) child.material.map.dispose();
+          child.material.dispose();
+        }
+      });
+    });
+    this.planes = [];
+    this.scene.clear();
+    this.renderer.dispose();
+    if (this.container && this.renderer.domElement) {
+      this.container.removeChild(this.renderer.domElement);
+    }
   }
 }
 
-new Sketch({
+const discSketchInstance = new Sketch({
   dom: document.getElementById("home__process-canvas"),
 });
+export { discSketchInstance };

@@ -21,7 +21,8 @@ export default class Sketch {
       1000
     );
 
-    this.camera.position.set(-0.4, -0.05, 1.5);
+    // this.camera.position.set(-0.4, -0.05, 1.5);
+    this.camera.position.set(0, -0.2, 2);
 
     this.isPlaying = true;
 
@@ -65,13 +66,13 @@ export default class Sketch {
       u_offsetX: { value: 0 },
       u_offsetY: { value: 0 },
       u_speed: { value: 0.8 },
-      u_scale: { value: 0.8 },
+      u_scale: { value: 0.5 },
       u_maskRadius: { value: 0.25 },
-      u_maskBlur: { value: 0.05 },
-      u_blobAmount: { value: 0.025 }, // How much irregularity (0.02-0.05 for subtle)
+      u_maskBlur: { value: 0.03 },
+      u_blobAmount: { value: 0.02 }, // How much irregularity (0.02-0.05 for subtle)
       u_blobAnimSpeed: { value: 0.8 }, // How fast the irregularities move
       u_verSpeed: { value: 0.3 },
-      u_verAmplitude: { value: 0.3 },
+      u_verAmplitude: { value: 0.2 },
     };
 
     this.material = new THREE.ShaderMaterial({
