@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
 
-gsap.registerPlugin(MotionPathPlugin, SplitText, ScrollTrigger);
+gsap.registerPlugin(SplitText, ScrollTrigger);
 
 // disc array
 const discs = [
@@ -142,10 +142,14 @@ export default class Sketch {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(this.width, this.height);
     this.renderer.setClearColor(0x000000, 0); // Transparent background
+    this.renderer.physicallyCorrectLights = true;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.8;
 
-    // Enable shadow mapping with VSM for natural soft shadows
+    // Enable shadow mapping
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.VSMShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.container.appendChild(this.renderer.domElement);
 
@@ -233,6 +237,8 @@ export default class Sketch {
     this._scrollUnsubscribe = null;
     this._scrollDelayedCall = null;
     this._rafId = null;
+    this._isVisible = true;
+    this._visibilityObserver = null;
 
     // Load custom font before creating objects
     this.loadCustomFont().then(() => {
@@ -247,6 +253,7 @@ export default class Sketch {
 
     this.setupResize();
     this.setupMouseEvents();
+    this.setupVisibilityObserver();
 
     if (lenis) {
       const onScroll = () => {
@@ -282,6 +289,14 @@ export default class Sketch {
   setupMouseEvents() {
     this.container.addEventListener("mousemove", this._boundMouseMove);
     this.container.addEventListener("mouseleave", this._boundMouseLeave);
+  }
+
+  setupVisibilityObserver() {
+    this._visibilityObserver = new IntersectionObserver(
+      ([entry]) => { this._isVisible = entry.isIntersecting; },
+      { threshold: 0 }
+    );
+    this._visibilityObserver.observe(this.renderer.domElement);
   }
 
   onMouseMove(event) {
@@ -464,7 +479,7 @@ export default class Sketch {
 
     // Create discs from the discs array
     discs.forEach((discData, index) => {
-      const plane = new THREE.Mesh(this.geometry, this.material.clone());
+      const plane = new THREE.Mesh(this.geometry, this.material);
 
       // Enable shadow casting and receiving
       plane.castShadow = true;
@@ -544,8 +559,8 @@ export default class Sketch {
     this.keyLight = new THREE.DirectionalLight(0xffffff, 0); // Animates to 0.3 in animateReveal
     this.keyLight.position.set(1.3, 0.05, 6); // Front, top right
     this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.width = 2048;
-    this.keyLight.shadow.mapSize.height = 2048;
+    this.keyLight.shadow.mapSize.width = 1024;
+    this.keyLight.shadow.mapSize.height = 1024;
     this.keyLight.shadow.camera.near = 3;
     this.keyLight.shadow.camera.far = 9;
     this.keyLight.shadow.camera.left = -2;
@@ -947,7 +962,7 @@ export default class Sketch {
         stagger: { each: 0.03, from: "end" },
         ease: "sine.in",
       },
-      4.9
+      4.7
     );
     tl.to(
       btn,
@@ -956,10 +971,10 @@ export default class Sketch {
         opacity: 0,
         filter: "blur(20px)",
         duration: 0.6,
-        stagger: { each: 0.15, from: "end" },
+        stagger: { each: 0.1, from: "end" },
         ease: "sine.in",
       },
-      4.5
+      4.3
     );
   }
 
@@ -979,19 +994,10 @@ export default class Sketch {
       this._rafId = requestAnimationFrame(this._boundRender);
       return;
     }
-    this.renderer.physicallyCorrectLights = true;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.8;
     if (!this.isPlaying) return;
-
-    // Keep originalRotation in sync with timeline for non-hovered planes (so tilt base is current each frame)
-    if (this.mainTimeline) {
-      this.planes.forEach((plane) => {
-        if (plane !== this.hoveredPlane) {
-          plane.userData.originalRotation.copy(plane.rotation);
-        }
-      });
+    if (!this._isVisible) {
+      this._rafId = requestAnimationFrame(this._boundRender);
+      return;
     }
 
     // Apply tilt interpolation when hovering a plane
@@ -1038,6 +1044,10 @@ export default class Sketch {
 
     if (typeof this._scrollUnsubscribe === "function") this._scrollUnsubscribe();
     if (this._scrollDelayedCall) this._scrollDelayedCall.kill();
+    if (this._visibilityObserver) {
+      this._visibilityObserver.disconnect();
+      this._visibilityObserver = null;
+    }
 
     if (this.mm) this.mm.revert();
 

@@ -16,30 +16,51 @@ const createTimeline = () => {
 
   flipCtx = gsap.context(() => {
     const section = document.querySelector("[data-home-project='section']");
-
-		const pinEl = document.querySelector("[data-home-project='pin']");
-
+    const pinEl = document.querySelector("[data-home-project='pin']");
     const cards = gsap.utils.toArray("[data-home-project='card']");
     const cardParents = gsap.utils.toArray("[data-home-project='card-parent']");
     const cardBoxes = gsap.utils.toArray("[data-home-project='card-box']");
-    const cardGrid = document.querySelector("[data-home-project='card-grid']");
-
-    const cardWrapper = document.querySelector(
-      "[data-home-project='grid-wrapper']",
-    );
-
-    const initialBox = document.querySelector(
-      "[data-home-project='initial-box']",
-    );
+    const cardWrapper = document.querySelector("[data-home-project='grid-wrapper']");
+    const initialBox = document.querySelector("[data-home-project='initial-box']");
     const finalBox = document.querySelector("[data-home-project='final-box']");
 
     let scaleFactor = 1;
-
     if (cards.length) {
       scaleFactor = Math.round(
         (cardWrapper.offsetWidth / cards[0].offsetWidth) * 100
       ) / 100;
     }
+
+    // ========== CACHE CHILD ELEMENT REFS ==========
+    // Queried once here so resetCard / resetCardParent / onEnter never touch the DOM again.
+    //   _cardRefs   : keyed by .home-project__card element (entry-hover state)
+    //   _parentRefs : keyed by card-parent element (placed-hover state)
+    const _cardRefs = new Map();
+    const _parentRefs = new Map();
+
+    cardParents.forEach((cardParent) => {
+      const card = cardParent.querySelector(".home-project__card");
+      const cardFolder = cardParent.querySelector(".card-folder");
+
+      if (card) {
+        _cardRefs.set(card, {
+          hoverBg: card.querySelector("[data-folder-bg='hover']"),
+          tag:     card.querySelector("[data-folder='tag']"),
+          desc:    card.querySelector("[data-folder='description']"),
+        });
+      }
+
+      if (cardFolder) {
+        _parentRefs.set(cardParent, {
+          card,
+          cardFolder,
+          previewFiles: Array.from(cardParent.querySelectorAll(".folder__preview__file")),
+          hoverBg:      cardFolder.querySelector("[data-folder-bg='hover']"),
+          tag:          cardFolder.querySelector("[data-folder='tag']"),
+          desc:         cardFolder.querySelector("[data-folder='description']"),
+        });
+      }
+    });
 
     const mainTl = gsap.timeline({
       scrollTrigger: {
@@ -48,16 +69,15 @@ const createTimeline = () => {
         end: "bottom top",
         pin: pinEl,
         scrub: true,
-				pinSpacing: false,
-        invalidateOnRefresh: true, // REQUIRED for Flip
-        anticipatePin: 1,  
-        // markers: true,
+        pinSpacing: false,
+        invalidateOnRefresh: true,
+        anticipatePin: 1,
       },
     });
 
     const finalState = Flip.getState(finalBox);
-    
-    // ========== REMOVING HOVER ON SCROLL ========== //
+
+    // ========== REMOVING HOVER ON SCROLL ==========
     let hoveredCard = null;
     let hoveredCardParent = null;
 
@@ -78,10 +98,7 @@ const createTimeline = () => {
     window.addEventListener("pointermove", onFirstPointerMove, { passive: true });
 
     function onPhysicalScroll() {
-      // Clear previous debounce
       clearTimeout(scrollDebounce);
-
-      // Set new debounce to trigger after 50ms of no physical scroll
       scrollDebounce = setTimeout(() => {
         resetCardIfHovered();
         resetCardParentIfHovered();
@@ -98,16 +115,13 @@ const createTimeline = () => {
       clearTimeout(scrollDebounce);
     };
 
-
-    // ========== CARD ENTRY HOVER ========== //
+    // ========== CARD ENTRY HOVER ==========
     let baseY = new Map();
 
     function resetCard(card) {
-      const cardFolderHoverBg = card.querySelector("[data-folder-bg = 'hover']");
-      const cardFolderTag = card.querySelector("[data-folder = 'tag']");
-      const cardFolderDesc = card.querySelector("[data-folder = 'description']");
-
       if (!card || !card.classList.contains("is-interactive")) return;
+      const refs = _cardRefs.get(card);
+      if (!refs) return;
 
       gsap.to(card, {
         y: `${baseY.get(card)}%`,
@@ -115,66 +129,43 @@ const createTimeline = () => {
         ease: "power3.inOut",
         overwrite: "auto",
       });
-      gsap.to(cardFolderHoverBg, {
-        opacity: 0,
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
-      gsap.to(cardFolderTag, {
-        backgroundImage: "linear-gradient(135deg, #FFF, #FFF)",
-        // color: "#FFEBB6",
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
-      gsap.to(cardFolderDesc, {
-        color: "#FFF",
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
+      gsap.to(refs.hoverBg, { opacity: 0, ease: "power1.inOut", duration: 0.3 });
+      // GSAP cannot interpolate CSS gradients — use set() to snap immediately
+      gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+      gsap.to(refs.desc, { color: "#FFF", ease: "power1.inOut", duration: 0.3 });
 
-      if (hoveredCard === card) {
-        hoveredCard = null;
-      }
+      if (hoveredCard === card) hoveredCard = null;
     }
-    
-    // ========== CARDS ENTRY ========== //
+
+    // ========== CARDS ENTRY ==========
     cardParents.forEach((cardParent, i) => {
       mainTl.fromTo(
         cardParent,
         { scale: scaleFactor + 2 },
-        {
-          scale: scaleFactor + 0.35,
-          duration: 0.8,
-          ease: "back.out(1.7)",
-        }, i * 0.05
+        { scale: scaleFactor + 0.35, duration: 0.8, ease: "back.out(1.7)" },
+        i * 0.05
       );
     });
     cards.forEach((card, i) => {
       const targetY = `${(cardParents.length - i) * -3 - 6}%`;
-      // Calculate and store baseY immediately (target value after animation)
       baseY.set(card, parseFloat(targetY));
       mainTl.fromTo(
         card,
         { y: 0 },
-        {
-          y: targetY,
-          duration: 0.6,
-          ease: "back.out(1.7)",
-        }, i * 0.05
+        { y: targetY, duration: 0.6, ease: "back.out(1.7)" },
+        i * 0.05
       );
     });
 
     mainTl.addLabel("initial", "+=0.3");
 
-    // ========== CARD PLACE ========== //
+    // ========== CARD PLACE ==========
     cardParents.forEach((cardParent, i) => {
       const q = gsap.utils.selector(cardParent);
-      const card = cardParent.querySelector(".home-project__card");
-      const cardFolder = cardParent.querySelector(".card-folder");
+      const refs = _parentRefs.get(cardParent);
+      const card = refs ? refs.card : cardParent.querySelector(".home-project__card");
       const folderImage = cardParent.querySelector(".folder__image-wrapper");
-      const folderDescription = cardParent.querySelector(
-        ".folder__description-text",
-      );
+      const folderDescription = cardParent.querySelector(".folder__description-text");
 
       mainTl.add(
         Flip.fit(cardParent, cardBoxes[i], {
@@ -183,7 +174,7 @@ const createTimeline = () => {
           absolute: true,
           scale: true,
           simple: true,
-          ease: "power3.inOut",
+          ease: "power2.inOut",
           immediateRender: false,
         }),
         mainTl.labels.initial + i * 0.1,
@@ -191,40 +182,20 @@ const createTimeline = () => {
 
       mainTl.to(
         card,
-        {
-          y: 0,
-          duration: 0.8,
-          ease: "power3.inOut",
-        },
+        { y: 0, duration: 0.8, ease: "power2.inOut" },
         mainTl.labels.initial + i * 0.1,
       );
 
       mainTl.fromTo(
         folderImage,
-        {
-          y: 10,
-          opacity: 0,
-        },
-        {
-          y: 0,
-          rotation: 0,
-          scale: 1,
-          opacity: 1,
-          duration: 0.6,
-          ease: "power3.out",
-        },
+        { y: 10, opacity: 0 },
+        { y: 0, rotation: 0, scale: 1, opacity: 1, duration: 0.6, ease: "power2.out" },
         mainTl.labels.initial + 0.52 + i * 0.1,
       );
       mainTl.fromTo(
         folderDescription,
-        {
-          opacity: 0,
-        },
-        {
-          opacity: 1,
-          duration: 0.6,
-          ease: "power3.out",
-        },
+        { opacity: 0 },
+        { opacity: 1, duration: 0.6, ease: "power2.out" },
         mainTl.labels.initial + 0.62 + i * 0.1,
       );
 
@@ -233,11 +204,11 @@ const createTimeline = () => {
         {
           duration: 0.001,
           onStart: () => {
-            cardParent.classList.add("is-placed")
+            cardParent.classList.add("is-placed");
             gsap.set(card, { pointerEvents: "auto" });
           },
           onReverseComplete: () => {
-            cardParent.classList.remove("is-placed")
+            cardParent.classList.remove("is-placed");
             gsap.set(card, { pointerEvents: "none" });
           },
         },
@@ -247,21 +218,15 @@ const createTimeline = () => {
 
     mainTl.addLabel("final", "+=0.1");
 
-    // ========== CARD PLACE HOVER ========== //
+    // ========== CARD PLACE HOVER ==========
     function resetCardParent(cardParent) {
       if (!cardParent || !cardParent.classList.contains("is-placed")) return;
+      const refs = _parentRefs.get(cardParent);
+      if (!refs) return;
 
-      const previewFiles = cardParent.querySelectorAll(".folder__preview__file");
-      const cardFolder = cardParent.querySelector(".card-folder");
-      const cardFolderHoverBg = cardFolder.querySelector("[data-folder-bg = 'hover']");
-      const cardFolderTag = cardFolder.querySelector("[data-folder = 'tag']");
-      const cardFolderDesc = cardFolder.querySelector("[data-folder = 'description']");
+      cardParents.forEach((sibling) => sibling.classList.remove("is-disabled"));
 
-      cardParents.forEach((siblingCardparent) => {
-          siblingCardparent.classList.remove("is-disabled");
-      })
-
-      previewFiles.forEach((previewFile, fileIndex) => {
+      refs.previewFiles.forEach((previewFile, fileIndex) => {
         gsap.to(previewFile, {
           y: "0%",
           rotation: 0,
@@ -273,44 +238,22 @@ const createTimeline = () => {
         });
       });
 
-      gsap.to(cardFolder, {
-        transformOrigin: "50% 50%",
-        scale: 1,
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
-      gsap.to(cardFolderHoverBg, {
-        opacity: 0,
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
-      gsap.to(cardFolderTag, {
-        backgroundImage: "linear-gradient(135deg, #FFF, #FFF)",
-        // color: "#FFEBB6",
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
-      gsap.to(cardFolderDesc, {
-        color: "#FFF",
-        ease: "power1.inOut",
-        duration: 0.3,
-      })
+      gsap.to(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1, ease: "power1.inOut", duration: 0.3 });
+      gsap.to(refs.hoverBg, { opacity: 0, ease: "power1.inOut", duration: 0.3 });
+      gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+      gsap.to(refs.desc, { color: "#FFF", ease: "power1.inOut", duration: 0.3 });
 
-      if (hoveredCardParent === cardParent) {
-        hoveredCardParent = null;
-      }
+      if (hoveredCardParent === cardParent) hoveredCardParent = null;
     }
 
     // Run once on initial load to enforce default non-hover state.
     cardParents.forEach((cardParent) => resetCardParent(cardParent));
 
-		cardParents.forEach((cardParent, i) => {
-      const previewFiles = cardParent.querySelectorAll(".folder__preview__file");
-      const cardFolder = cardParent.querySelector(".card-folder");
+    cardParents.forEach((cardParent) => {
+      const refs = _parentRefs.get(cardParent);
+      if (!refs) return;
 
-      const cardFolderHoverBg = cardFolder.querySelector("[data-folder-bg = 'hover']")
-      const cardFolderTag = cardFolder.querySelector("[data-folder = 'tag']");
-      const cardFolderDesc = cardFolder.querySelector("[data-folder = 'description']");
+      const { previewFiles, cardFolder } = refs;
 
       const onEnter = () => {
         if (!hasPointerMovedSinceInit) return;
@@ -318,11 +261,9 @@ const createTimeline = () => {
 
         hoveredCardParent = cardParent;
 
-        cardParents.forEach((siblingCardparent) => {
-          if(siblingCardparent !== cardParent) {
-            siblingCardparent.classList.add("is-disabled");
-          }
-        })
+        cardParents.forEach((sibling) => {
+          if (sibling !== cardParent) sibling.classList.add("is-disabled");
+        });
 
         previewFiles.forEach((previewFile, fileIndex) => {
           let rotation;
@@ -336,7 +277,7 @@ const createTimeline = () => {
 
           gsap.to(previewFile, {
             y: "-90%",
-            rotation: rotation,
+            rotation,
             scale: 1,
             duration: 0.25,
             ease: "back.out(1.7)",
@@ -345,33 +286,13 @@ const createTimeline = () => {
           });
         });
 
-        gsap.to(cardFolder, {
-          transformOrigin: "50% 50%",
-          scale: 1.05,
-          ease: "power1.inOut",
-          duration: 0.3,
-        })
-        gsap.to(cardFolderHoverBg, {
-          opacity: 1,
-          ease: "power1.inOut",
-          duration: 0.3,
-        })
-        gsap.to(cardFolderTag, {
-          backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)",
-          // color: "#FFEBB6",
-          ease: "power1.inOut",
-          duration: 0.3,
-        })
-        gsap.to(cardFolderDesc, {
-          color: "#FFEBB6",
-          ease: "power1.inOut",
-          duration: 0.3,
-        })
+        gsap.to(cardFolder, { transformOrigin: "50% 50%", scale: 1.05, ease: "power1.inOut", duration: 0.3 });
+        gsap.to(refs.hoverBg, { opacity: 1, ease: "power1.inOut", duration: 0.3 });
+        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)" });
+        gsap.to(refs.desc, { color: "#FFEBB6", ease: "power1.inOut", duration: 0.3 });
       };
 
-      const onLeave = () => {
-        resetCardParent(cardParent);
-      };
+      const onLeave = () => resetCardParent(cardParent);
 
       cardParent.addEventListener("mouseenter", onEnter);
       cardParent.addEventListener("mouseleave", onLeave);
@@ -382,9 +303,10 @@ const createTimeline = () => {
       });
     });
 
-    // ========== CARD OUT ========== //
+    // ========== CARD OUT ==========
     cardParents.forEach((cardParent, i) => {
-      const card = cardParent.querySelector(".home-project__card");
+      const refs = _parentRefs.get(cardParent);
+      const card = refs ? refs.card : cardParent.querySelector(".home-project__card");
 
       const targetRotation = [0, 3].includes(i)
         ? 20
@@ -397,11 +319,11 @@ const createTimeline = () => {
         {
           duration: 0.001,
           onStart: () => {
-            cardParent.classList.remove("is-placed")
+            cardParent.classList.remove("is-placed");
             gsap.set(card, { pointerEvents: "none" });
           },
           onReverseComplete: () => {
-            cardParent.classList.add("is-placed")
+            cardParent.classList.add("is-placed");
             gsap.set(card, { pointerEvents: "auto" });
           },
         },
@@ -414,26 +336,19 @@ const createTimeline = () => {
           fitChild: ".home-project__card",
           absolute: true,
           scale: true,
-          simple: true, 
+          simple: true,
           ease: "power3.in",
-          immediateRender: false, 
+          immediateRender: false,
         }),
         mainTl.labels.final + i * 0.1,
       );
 
       mainTl.to(
         card,
-        {
-          transformOrigin: "center",
-          rotation: targetRotation,
-          duration: 0.4,
-          ease: "power3.in",
-        },
+        { transformOrigin: "center", rotation: targetRotation, duration: 0.4, ease: "power3.in" },
         mainTl.labels.final + i * 0.1,
       );
     });
-
-    // GSDevTools.create({animation: mainTl});
   });
 };
 
@@ -447,11 +362,18 @@ function debounce(fn, ms) {
 
 createTimeline();
 
+// Only rebuild the full timeline when the viewport width actually changes.
+// Height-only changes (e.g. mobile keyboard, scrollbar appearing) just need a refresh.
+let _lastResizeWidth = window.innerWidth;
 window.addEventListener(
   "resize",
   debounce(() => {
+    const newWidth = window.innerWidth;
     ScrollTrigger.refresh();
-    createTimeline();
+    if (newWidth !== _lastResizeWidth) {
+      _lastResizeWidth = newWidth;
+      createTimeline();
+    }
   }, 150),
 );
 

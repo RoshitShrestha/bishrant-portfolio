@@ -4,7 +4,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const heroCardAnimIn = () => {
         const animHeadline = document.querySelector("[data-case-anim='headline']");
-        const cardGradient = document.querySelector("[data-case-anim='hero-card-gradient']");
         const cardOverlay = document.querySelector("[data-case-anim='hero-card-overlay']");
         const caseNav = document.querySelector("[data-case-anim='nav']");
         const caseHeroList = document.querySelectorAll("[data-case-anim='hero-list']");

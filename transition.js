@@ -9,8 +9,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const transitionAnchors = document.querySelectorAll("[data-project-transition-anchor]");
   const loadGrid = document.querySelector("[data-load-grid]");
 
-  console.log(transitionAnchors);
-
   gsap.set(transitionWrapper, { width: window.clientWidth });
 
   folderAnchors.forEach((anchor) => {

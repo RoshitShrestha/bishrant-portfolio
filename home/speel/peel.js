@@ -133,11 +133,8 @@ export function handleResize() {
     if (autoPeeling) return;
     stripHoverEnabled = false;
 
-    const matrix = new DOMMatrix(
-      getComputedStyle(this.el).transform === "none"
-        ? undefined
-        : getComputedStyle(this.el).transform
-    );
+    const transform = getComputedStyle(this.el).transform;
+    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
     const localPoint = matrix.inverse().transformPoint(new DOMPoint(x, y));
 
     currentPos = { x: localPoint.x, y: localPoint.y };

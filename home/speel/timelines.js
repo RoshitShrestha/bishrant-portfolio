@@ -12,6 +12,7 @@ import { heroGradientMesh, heroGradientUniforms, heroMaskMaterial } from "./thre
 import { unlockScroll } from "./scroll.js";
 import { SVGSETTINGS } from "./config.js";
 import { cameraOffset } from "./config.js";
+import { markNeedsRender } from "./renderState.js";
 
 let introTimeline;
 let heroContentTimeline;
@@ -64,6 +65,7 @@ export function createTimelines(updateSvgOpacity) {
       value: 1,
       duration: 1.5,
       ease: "power1.in",
+      onUpdate: markNeedsRender,
       onComplete: () => {
         document.querySelector("[data-hero='wrapper']")?.classList.remove("u-mouse-none");
       },
@@ -79,7 +81,7 @@ export function createTimelines(updateSvgOpacity) {
       z: cameraEndZ,
       duration: SVGSETTINGS.duration,
       ease: "expo.out",
-      onUpdate: updateSvgOpacity,
+      onUpdate() { updateSvgOpacity(); markNeedsRender(); },
     },
     "init+=0.25"
   );
@@ -90,6 +92,7 @@ export function createTimelines(updateSvgOpacity) {
       value: 0.8,
       duration: 1.5,
       ease: "expo.out",
+      onUpdate: markNeedsRender,
     },
     "init+=0.5"
   );
@@ -100,6 +103,7 @@ export function createTimelines(updateSvgOpacity) {
       value: 1.0 - rectCenterEnd,
       duration: 1,
       ease: "expo.in",
+      onUpdate: markNeedsRender,
     },
     "blobEnd"
   );
@@ -110,6 +114,7 @@ export function createTimelines(updateSvgOpacity) {
       value: rectCenterEnd,
       duration: 1.2,
       ease: "expo.in",
+      onUpdate: markNeedsRender,
       onComplete: () => unlockScroll(),
     },
     "blobEnd"
@@ -202,6 +207,7 @@ export function createTimelines(updateSvgOpacity) {
       value: 1,
       duration: 1.5,
       ease: "power3.in",
+      onUpdate: markNeedsRender,
     },
     0.2
   );
@@ -292,6 +298,7 @@ function setupHeroScrollTimeline() {
     invalidateOnRefresh: true,
     onUpdate: (self) => {
       heroMaskMaterial.uniforms.uProgress.value = self.progress;
+      markNeedsRender();
     },
   });
 

@@ -12,9 +12,9 @@ export const renderTarget = new THREE.WebGLRenderTarget(
 export const renderer = new THREE.WebGLRenderer({
   canvas: document.querySelector("#bg"),
   alpha: true,
-  antialias: true,
+  // antialias: true,
   premultipliedAlpha: false,
 });
 renderer.setClearColor(0x120c01, 1);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);

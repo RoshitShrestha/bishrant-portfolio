@@ -14,10 +14,13 @@ import { createTimelines, getIntroTimeline, getHeroContentTimeline, disposeTimel
 import { setPeelIntroTimeline } from "./peel.js";
 import { skipIntro } from "./navigation.js";
 import { vectorCount, vectorSpacing, svgVariants } from "./config.js";
+import { markNeedsRender, consumeNeedsRender } from "./renderState.js";
 
 let heroContentTimeline;
 let _rafId = null;
 let _resizeBound = null;
+let _isVisible = true;     // tracks canvas intersection with viewport
+let _visibilityObserver = null;
 
 
 export function startDirectHeroEntry() {
@@ -43,6 +46,7 @@ export async function init() {
   setPeelIntroTimeline(getIntroTimeline());
   heroContentTimeline = getHeroContentTimeline();
 
+  setupVisibilityObserver();
   animate();
 
   if (skipIntro) {
@@ -60,6 +64,10 @@ export function dispose() {
   if (_resizeBound && typeof window !== "undefined") {
     window.removeEventListener("resize", _resizeBound);
     _resizeBound = null;
+  }
+  if (_visibilityObserver) {
+    _visibilityObserver.disconnect();
+    _visibilityObserver = null;
   }
 
   disposeTimelines();
@@ -81,13 +89,31 @@ export function dispose() {
 
 const clock = new THREE.Clock();
 
+function setupVisibilityObserver() {
+  _visibilityObserver = new IntersectionObserver(
+    ([entry]) => {
+      _isVisible = entry.isIntersecting;
+      // Force a render on the frame we become visible again so it isn't stale
+      if (_isVisible) markNeedsRender();
+    },
+    { threshold: 0 }
+  );
+  _visibilityObserver.observe(renderer.domElement);
+}
+
 function animate() {
   _rafId = requestAnimationFrame(animate);
+
+  // Skip all GPU work when the canvas is scrolled out of the viewport
+  if (!_isVisible) return;
 
   if (heroGradientUniforms.u_isPaused.value === 0) {
     const elapsed = clock.getElapsedTime();
     heroGradientUniforms.u_time.value = elapsed + 100;
+    markNeedsRender();
   }
+
+  if (!consumeNeedsRender()) return;
 
   renderer.setRenderTarget(renderTarget);
   renderer.clear();
@@ -115,6 +141,7 @@ export function setupResize() {
       window.innerHeight
     );
     renderer.setSize(window.innerWidth, window.innerHeight);
+    markNeedsRender();
   };
   window.addEventListener("resize", _resizeBound);
 }
