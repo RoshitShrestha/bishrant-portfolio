@@ -2,6 +2,7 @@
 // import { HDRLoader } from "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/loaders/HDRLoader.js";
 import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 
 
 // gsap.registerPlugin(SplitText, ScrollTrigger);
@@ -687,18 +688,18 @@ export default class Sketch {
   }
 
   loadEnvironment() {
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    pmrem.compileEquirectangularShader();
+    const ktx2Loader = new KTX2Loader()
+      .setTranscoderPath(
+        "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/libs/basis/"
+      )
+      .detectSupport(this.renderer);
 
-    new HDRLoader().load(
-      "https://cdn.jsdelivr.net/gh/RoshitShrestha/bishrant-portfolio@1.4.0/empty_warehouse.hdr",
-      (hdrTexture) => {
-        hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+    ktx2Loader.load(
+      "https://cdn.jsdelivr.net/gh/RoshitShrestha/bishrant-portfolio@1.6.3/empty_warehouse.ktx2",
+      (texture) => {
+        // Use the loaded KTX2 texture directly as envMap
+        const envMap = texture;
 
-        const envMap = pmrem.fromEquirectangular(hdrTexture).texture;
-
-        // Apply envMap to ALL chrome sticker materials
-        // Do NOT set scene.environment as it would light all materials
         if (
           this.chromeStickerMaterials &&
           this.chromeStickerMaterials.length > 0
@@ -710,13 +711,10 @@ export default class Sketch {
         }
 
         this.envMap = envMap;
-
-        hdrTexture.dispose();
-        pmrem.dispose();
       },
       undefined,
       (err) => {
-        console.error("HDR load failed", err);
+        console.error("KTX2 load failed", err);
       }
     );
   }
