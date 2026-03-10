@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
 
-gsap.registerPlugin(SplitText, ScrollTrigger);
+// gsap.registerPlugin(SplitText, ScrollTrigger);
 
 // disc array
 const discs = [
@@ -50,7 +50,7 @@ const discs = [
     },
     position: {
       start: { x: 1.5, y: 1.3, z: 6.8 },
-      end: { x: 0.3, y: 0.15, z: 0.1 },
+      end: { x: 0.3, y: 0.05, z: 0.1 }, // Changed from 0.15 to 0.2
       exit: { x: 0.6, y: 1.3, z: 3.4 },
     },
     rotation: {
@@ -68,7 +68,7 @@ const discs = [
     },
     position: {
       start: { x: 2.7, y: 1.2, z: 5.4 },
-      end: { x: 1.25, y: 0, z: -0.25 },
+      end: { x: 1.25, y: -0.1, z: -0.25 },
       exit: { x: 1.6, y: 1.3, z: 2.55 },
     },
     rotation: {
@@ -119,7 +119,7 @@ const discs = [
     },
     position: {
       start: { x: 1.85, y: -0.9, z: 5.6 },
-      end: { x: 0.75, y: -0.72, z: 0.42 },
+      end: { x: 0.75, y: -0.82, z: 0.42 },
       exit: { x: 1.8, y: 1.3, z: 4 },
     },
     rotation: {
@@ -283,7 +283,7 @@ export default class Sketch {
     this.camera.aspect = this.width / this.height;
     this.camera.updateProjectionMatrix();
 
-    ScrollTrigger.refresh();
+    // ScrollTrigger.refresh();
   }
 
   setupMouseEvents() {

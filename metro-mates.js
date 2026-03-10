@@ -3,6 +3,14 @@ gsap.registerPlugin(ScrollTrigger);
 document.addEventListener("DOMContentLoaded", () => {
 
   const metroMatterAnim = () => {
+    function getScale() {
+      const width = window.innerWidth;
+      return Math.min(1, Math.max(0.8, 0.8 + (1 - 0.8) * ((width - 1024) / (1440 - 1024))));
+    }
+    
+    let scale = getScale();
+    
+
     const CONFIG = {
       wallThickness: 200,
 
@@ -49,44 +57,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const TAGS = [
         {
-          w: 321,
-          h: 54,
+          w: 321 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/6997e9518745d531a220b8d0_trigger-mechanism.webp"
         },
         {
-          w: 459,
-          h: 54,
+          w: 459 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/6997e951b748a92ff675e0db_fun-educational-replayable.webp"
         },
         {
-          w: 258,
-          h: 54,
+          w: 258 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a671354c472314821911ec_507a9a0ad599447f743bccd31813c3d0_sound-%26-touch.webp"
         },
         {
-          w: 207,
-          h: 54,
+          w: 207 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a671352f73b2bb145423ca_b9b8185f899027ba509050a4d876bd3c_tactile-toy.webp"
         },
         {
-          w: 507,
-          h: 54,
+          w: 507 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a67135976911792b254d93_a21de5721c3f9f9907a57be8e0adb4f8_challenging.webp"
         },
         {
-          w: 354,
-          h: 54,
+          w: 354 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a671352a6168ee19b30d21_f1f8cb0c9dab50f8c2554898a0df167c_motor-skills.webp"
         },
         {
-          w: 323,
-          h: 54,
+          w: 323 * scale,
+          h: 54 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a671359185895c3e0eb7f2_2022cb1744018590fc733f2a8639935e_early-independence.webp"
         },
@@ -95,32 +103,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const CIRCLE_TAGS = [
         {
-          size: 251,
+          size: 251 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a17a9aeab9868f33c6e32e_simon-says.webp"
         },
         {
-          size: 95,
+          size: 95 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a17b190a4b0ae70492b03c_red-95.webp"
         },
         {
-          size: 246,
+          size: 246 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a6735ee3ef875bb5317ac6_fidget-toys.webp"
         },
         {
-          size: 220,
+          size: 220 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a6735e1abe7cf2c6281977_tamagotchi.webp"
         },
         {
-          size: 246,
+          size: 246 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a6735e858ad3db211fa199_tactile.webp"
         },
         {
-          size: 52,
+          size: 52 * scale,
           texture:
             "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69a6735e9185895c3e0ee48e_yellow-52.webp"
         },
@@ -324,7 +332,10 @@ document.addEventListener("DOMContentLoaded", () => {
         Composite.add(engine.world, [ground, left, right]);
       }
 
-      window.addEventListener("resize", updateBounds);
+      window.addEventListener("resize", () => {
+        updateBounds();
+        scale = getScale();
+      });
 
       function start() {
         Render.run(render);
@@ -379,6 +390,83 @@ document.addEventListener("DOMContentLoaded", () => {
 
   };
 
+  const metroListAnimIn = () => {
+    const metroTriggers = document.querySelectorAll("[data-metro-anim='list-trigger']");
+    
+
+    metroTriggers.forEach((metroTrigger, indexTrigger) => {
+        const lists = metroTrigger.querySelectorAll("[data-metro-list='list']");
+
+        const mainTl = gsap.timeline({
+            scrollTrigger: {
+                trigger: metroTrigger,
+                start: "top 75%",
+                // markers: true,
+            },
+        });
+
+        document.fonts.ready.then(() => {
+            lists.forEach((list, indexList) => {
+                const listStrokes = list.querySelectorAll("[data-metro-list='stroke']");
+                const listTexts = list.querySelectorAll("[data-metro-list='text']");
+                const listTitle = list.querySelector("[data-metro-list='title']");
+
+                const animMetroListTl = gsap.timeline();
+
+                const listTitleSplit = new SplitText(listTitle, {
+                    type: "chars",
+                });
+
+                animMetroListTl.fromTo(
+                    listTitleSplit.chars, 
+                {
+                    opacity: 0,
+                },
+                {    
+                    opacity: 1,
+                    duration: 0.1,
+                    stagger: 0.025,
+                    ease: "power2.out",
+                });
+
+                animMetroListTl.fromTo(
+                    listStrokes,
+                    {
+                        drawSVG: "0%",
+                    },
+                    {
+                        drawSVG: "100%",
+                        duration: 0.4,
+                        ease: "sine",
+                        stagger: 0.1,
+                    }, 
+                    0.05
+                );
+
+                listTexts.forEach((text, indexText) => {
+                    const textSplit = new SplitText(text, {
+                        type: "chars",
+                    });
+
+                    animMetroListTl.fromTo(textSplit.chars, {
+                        opacity: 0,
+                    }, {    
+                        opacity: 1,
+                        duration: 0.1,
+                        stagger: 0.025,
+                        ease: "power2.out",
+                    }, indexText * 0.1 + 0.1);
+                });
+
+                mainTl.add(animMetroListTl, indexList * 0.1);
+            });
+        });
+    });
+
+    // GSDevTools.create({ animation: mainTl });
+
+  };
+
   function debounce(fn, ms) {
     let timeout;
     return () => {
@@ -389,6 +477,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Run animations once
   metroMatterAnim();
+  metroListAnimIn();
 
   // Only refresh ScrollTrigger on resize
   window.addEventListener(

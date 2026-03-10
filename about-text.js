@@ -1,4 +1,4 @@
-gsap.registerPlugin(ScrollTrigger, Observer);
+// gsap.registerPlugin(ScrollTrigger, Observer);
 
 let flipCtx;
 

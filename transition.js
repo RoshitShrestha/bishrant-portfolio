@@ -1,6 +1,6 @@
 
 document.addEventListener("DOMContentLoaded", () => {
-  gsap.registerPlugin(Flip);
+  // gsap.registerPlugin(Flip);
   const transitionDiv = document.querySelector("[data-folder-transition-container]");
   //   data-folder-transition-img
   const folderAnchors = document.querySelectorAll("[data-folder-anchor]");
@@ -16,6 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
 
       let destination = anchor.getAttribute("href");
+
+      const cardParent = anchor.closest('[data-home-project="card-parent"]');
 
       const currentBg = anchor.querySelector("[data-folder-transition-img]");
       const currentLogo = anchor.querySelector("[data-folder-img]");
@@ -48,8 +50,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // gsap.set(currentBg, { borderRadius: 10 });
       gsap.set(transitionDiv, { opacity: 0 });
-      const state = Flip.getState(currentBg, {
-        props: "borderRadius"
+      const state = Flip.getState([currentBg, cardParent], {
+        props: "borderRadius, transform"
       });
       transitionDiv.appendChild(currentBg);
 
@@ -75,6 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
           duration: 0.8,
           ease: "power2.out",
           absolute: true,
+          scale: true
         }),
       )
 

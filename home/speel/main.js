@@ -70,6 +70,6 @@ window.addEventListener("pageshow", (event) => {
 
 window.addEventListener("resize", peelHandleResize);
 
-gsap.registerPlugin(ScrollTrigger, SplitText);
+// gsap.registerPlugin(ScrollTrigger, SplitText);
 
 init();

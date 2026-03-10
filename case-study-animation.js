@@ -281,83 +281,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }; */
 
-    const metroListAnimIn = () => {
-        const metroTriggers = document.querySelectorAll("[data-metro-anim='list-trigger']");
-        
-
-        metroTriggers.forEach((metroTrigger, indexTrigger) => {
-            const lists = metroTrigger.querySelectorAll("[data-metro-list='list']");
-
-            const mainTl = gsap.timeline({
-                scrollTrigger: {
-                    trigger: metroTrigger,
-                    start: "top 75%",
-                    // markers: true,
-                },
-            });
-
-            document.fonts.ready.then(() => {
-                lists.forEach((list, indexList) => {
-                    const listStrokes = list.querySelectorAll("[data-metro-list='stroke']");
-                    const listTexts = list.querySelectorAll("[data-metro-list='text']");
-                    const listTitle = list.querySelector("[data-metro-list='title']");
-
-                    const animMetroListTl = gsap.timeline();
-
-                    const listTitleSplit = new SplitText(listTitle, {
-                        type: "chars",
-                    });
-
-                    animMetroListTl.fromTo(
-                        listTitleSplit.chars, 
-                    {
-                        opacity: 0,
-                    },
-                    {    
-                        opacity: 1,
-                        duration: 0.1,
-                        stagger: 0.025,
-                        ease: "power2.out",
-                    });
-
-                    animMetroListTl.fromTo(
-                        listStrokes,
-                        {
-                            drawSVG: "0%",
-                        },
-                        {
-                            drawSVG: "100%",
-                            duration: 0.4,
-                            ease: "sine",
-                            stagger: 0.1,
-                        }, 
-                        0.05
-                    );
-
-                    listTexts.forEach((text, indexText) => {
-                        const textSplit = new SplitText(text, {
-                            type: "chars",
-                        });
-
-                        animMetroListTl.fromTo(textSplit.chars, {
-                            opacity: 0,
-                        }, {    
-                            opacity: 1,
-                            duration: 0.1,
-                            stagger: 0.025,
-                            ease: "power2.out",
-                        }, indexText * 0.1 + 0.1);
-                    });
-
-                    mainTl.add(animMetroListTl, indexList * 0.1);
-                });
-            });
-        });
-
-        // GSDevTools.create({ animation: mainTl });
-
-    };
-
     function debounce(fn, ms) {
         let timeout;
         return () => {
@@ -369,7 +292,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Run animations once
     titleAnimIn();
     heroCardAnimIn();
-    metroListAnimIn();
 
     // Only refresh ScrollTrigger on resize
     window.addEventListener(

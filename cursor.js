@@ -1,4 +1,4 @@
-gsap.registerPlugin(MorphSVGPlugin);
+// gsap.registerPlugin(MorphSVGPlugin);
 
 // ── Element refs ─────────────────────────────────────────────────────
 const NS = 'http://www.w3.org/2000/svg';
@@ -48,7 +48,7 @@ const setTop = gsap.quickSetter(cursorEl, 'top', 'px');
 
 // ── State ────────────────────────────────────────────────────────────
 let mode = 'default';
-let mx = innerWidth / 2, my = innerHeight / 2, px = mx, py = my;
+let mx = 0, my = 0, px = mx, py = my;
 let pressed = false, holdDuration = 0, releaseCharge = 0;
 const MAX_HOLD = 120; // frames ≈ 2 s at 60 fps
 

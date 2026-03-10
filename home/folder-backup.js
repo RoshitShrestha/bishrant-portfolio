@@ -1,4 +1,4 @@
-gsap.registerPlugin(Flip, ScrollTrigger);
+// gsap.registerPlugin(Flip, ScrollTrigger);
 
 let flipCtx;
 let _scrollListenerCleanup = null;
