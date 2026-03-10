@@ -2,7 +2,8 @@
 // import { HDRLoader } from "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/loaders/HDRLoader.js";
 import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
-import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+// import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 
 // gsap.registerPlugin(SplitText, ScrollTrigger);
@@ -688,35 +689,50 @@ export default class Sketch {
   }
 
   loadEnvironment() {
-    const ktx2Loader = new KTX2Loader()
-      .setTranscoderPath(
-        "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/libs/basis/"
-      )
-      .detectSupport(this.renderer);
+    const startLoad = () => {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      pmrem.compileEquirectangularShader();
 
-    ktx2Loader.load(
-      "https://cdn.jsdelivr.net/gh/RoshitShrestha/bishrant-portfolio@1.6.3/empty_warehouse.ktx2",
-      (texture) => {
-        // Use the loaded KTX2 texture directly as envMap
-        const envMap = texture;
+      const ktx2Loader = new KTX2Loader()
+        .setTranscoderPath(
+          "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/libs/basis/"
+        )
+        .detectSupport(this.renderer);
 
-        if (
-          this.chromeStickerMaterials &&
-          this.chromeStickerMaterials.length > 0
-        ) {
-          this.chromeStickerMaterials.forEach((material) => {
-            material.envMap = envMap;
-            material.needsUpdate = true;
-          });
+      ktx2Loader.load(
+        "https://cdn.jsdelivr.net/gh/RoshitShrestha/bishrant-portfolio@1.6.3/empty_warehouse.ktx2",
+        (texture) => {
+          texture.mapping = THREE.EquirectangularReflectionMapping;
+
+          const envMap = pmrem.fromEquirectangular(texture).texture;
+
+          if (
+            this.chromeStickerMaterials &&
+            this.chromeStickerMaterials.length > 0
+          ) {
+            this.chromeStickerMaterials.forEach((material) => {
+              material.envMap = envMap;
+              material.needsUpdate = true;
+            });
+          }
+
+          this.envMap = envMap;
+
+          texture.dispose();
+          pmrem.dispose();
+        },
+        undefined,
+        (err) => {
+          console.error("KTX2 load failed", err);
         }
+      );
+    };
 
-        this.envMap = envMap;
-      },
-      undefined,
-      (err) => {
-        console.error("KTX2 load failed", err);
-      }
-    );
+    if (document.readyState === "complete") {
+      startLoad();
+    } else {
+      window.addEventListener("load", startLoad, { once: true });
+    }
   }
 
   animateReveal() {
