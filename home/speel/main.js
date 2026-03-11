@@ -68,7 +68,10 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted) loaderGridAnimation();
 });
 
-window.addEventListener("resize", peelHandleResize);
+window.addEventListener("resize", () => {
+  peelHandleResize();
+  initStickerPeels(true);
+});
 
 // gsap.registerPlugin(ScrollTrigger, SplitText);
 

@@ -178,7 +178,7 @@ export function disposeStickerPeels() {
   _stickerCleanups = [];
 }
 
-export function initStickerPeels() {
+export function initStickerPeels(skipIntroAnim = false) {
   disposeStickerPeels();
 
   if (typeof CustomEase === "undefined") return;
@@ -210,19 +210,7 @@ export function initStickerPeels() {
       peelPos = { x: width, y: height };
     }
 
-    p.setPeelPosition(peelPos.x, peelPos.y);
-
-    gsap.to(peelPos, {
-      duration: 0.8,
-      delay: 0.9 + 0.2 * i,
-      x: targetX,
-      y: targetY,
-      onUpdate: function () {
-        p.setPeelPosition(peelPos.x, peelPos.y);
-      },
-      ease: "sticker",
-    });
-
+    // Path must be set before setTimeAlongPath can be used
     if (i === 0 || i === 1) {
       p.setPeelPath(targetX, targetY, 50, targetY, 0, 0, targetX, -targetY);
     }
@@ -231,6 +219,24 @@ export function initStickerPeels() {
     }
     p.setFadeThreshold(0.8);
     p.t = 0;
+
+    if (skipIntroAnim) {
+      // Use the same positioning system as hover/press so there's no offset when they fire
+      p.setTimeAlongPath(0);
+    } else {
+      p.setPeelPosition(peelPos.x, peelPos.y);
+      gsap.to(peelPos, {
+        duration: 0.8,
+        delay: 0.9 + 0.2 * i,
+        x: targetX,
+        y: targetY,
+        onUpdate: function () {
+          p.setPeelPosition(peelPos.x, peelPos.y);
+        },
+        ease: "sticker",
+      });
+    }
+
     const tween = gsap.to(p, {
       t: 1,
       duration: 1,
@@ -244,6 +250,8 @@ export function initStickerPeels() {
     let hoverEnabled = true;
 
     p.handlePress(function (evt) {
+      // gsap.killTweensOf(p, "t");
+      // tween.seek(0);
       tween.play();
       hoverEnabled = false;
       this.handlePress(null);
