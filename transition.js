@@ -4,12 +4,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const transitionDiv = document.querySelector("[data-folder-transition-container]");
   //   data-folder-transition-img
   const folderAnchors = document.querySelectorAll("[data-folder-anchor]");
-  const transitionWrapper = document.querySelector("[data-folder-transition-wrapper]");
+  // const transitionWrapper = document.querySelector("[data-folder-transition-wrapper]");
 
   const transitionAnchors = document.querySelectorAll("[data-project-transition-anchor]");
   const loadGrid = document.querySelector("[data-load-grid]");
 
-  gsap.set(transitionWrapper, { width: window.clientWidth });
+  // gsap.set(transitionWrapper, { width: window.clientWidth });
 
   folderAnchors.forEach((anchor) => {
     anchor.addEventListener("click", (e) => {
@@ -48,50 +48,51 @@ document.addEventListener("DOMContentLoaded", () => {
         finalGradient = "linear-gradient(180deg, hsl(0, 0%, 100%), hsl(0, 0%, 100%))";
       }
 
-      // gsap.set(currentBg, { borderRadius: 10 });
-      gsap.set(transitionDiv, { opacity: 0 });
-      const state = Flip.getState([currentBg, cardParent], {
-        props: "borderRadius, transform"
-      });
-      transitionDiv.appendChild(currentBg);
+      if(transitionDiv) { 
+        // gsap.set(currentBg, { borderRadius: 10 });
+        gsap.set(transitionDiv, { opacity: 0 });
+        const state = Flip.getState([currentBg, cardParent], {
+          props: "borderRadius, transform"
+        });
+        transitionDiv.appendChild(currentBg);
 
-      const tl = gsap.timeline({
-        onComplete: () => {
-          window.location = destination;
-        }
-      });
-      
-      tl.to(currentLogo, { 
-        opacity: 0, 
-        duration: 0.3, 
-        ease: "power2.in",
-      });
-      tl.to(transitionDiv, { 
-        opacity: 1, 
-        duration: 0.3, 
-        ease: "power2",
-      }, "<");
+        const tl = gsap.timeline({
+          onComplete: () => {
+            window.location = destination;
+          }
+        });
+        
+        tl.to(currentLogo, { 
+          opacity: 0, 
+          duration: 0.3, 
+          ease: "power2.in",
+        });
+        tl.to(transitionDiv, { 
+          opacity: 1, 
+          duration: 0.3, 
+          ease: "power2",
+        }, "<");
 
-      tl.add(
-        Flip.from(state, {
-          duration: 0.8,
-          ease: "power2.out",
-          absolute: true,
-          scale: true
-        }),
-      )
+        tl.add(
+          Flip.from(state, {
+            duration: 0.8,
+            ease: "power2.out",
+            absolute: true,
+            scale: true
+          }),
+        )
 
-      tl.fromTo(currentBg, {
-        backgroundImage: initialGradient,
-        borderRadius: 5,
-      }, { 
-        opacity: 1,
-        backgroundImage: finalGradient,
-        borderRadius: 10,
-        duration: 0.8, 
-        ease: "power3.in" 
-      }, "<");
-
+        tl.fromTo(currentBg, {
+          backgroundImage: initialGradient,
+          borderRadius: 5,
+        }, { 
+          opacity: 1,
+          backgroundImage: finalGradient,
+          borderRadius: 10,
+          duration: 0.8, 
+          ease: "power3.in" 
+        }, "<");
+      }
     });
   });
 

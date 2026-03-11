@@ -1,12 +1,7 @@
-// import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js";
-// import { HDRLoader } from "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/loaders/HDRLoader.js";
 import * as THREE from "three";
-import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
-// import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 
-// gsap.registerPlugin(SplitText, ScrollTrigger);
 
 // disc array
 const discs = [
@@ -584,8 +579,8 @@ export default class Sketch {
 
   async loadCustomFont() {
     const fontUrl =
-      "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/67edf8c3959a728a35cae0b1_TT%20Neoris%20Trial%20Medium.ttf";
-    const fontName = "TT Neoris Trial";
+      "https://cdn.prod.website-files.com/66d46ff703091f83e3abce17/69b1001e95cd253171e7a127_InterDisplay-Medium.woff";
+    const fontName = "Interdisplay";
 
     try {
       const font = new FontFace(fontName, `url(${fontUrl})`);
