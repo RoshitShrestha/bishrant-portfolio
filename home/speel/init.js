@@ -92,9 +92,21 @@ const clock = new THREE.Clock();
 function setupVisibilityObserver() {
   _visibilityObserver = new IntersectionObserver(
     ([entry]) => {
+      const wasVisible = _isVisible;
       _isVisible = entry.isIntersecting;
-      // Force a render on the frame we become visible again so it isn't stale
-      if (_isVisible) markNeedsRender();
+      if (_isVisible) {
+        // When becoming visible again, force a fresh render and restart the loop if needed
+        markNeedsRender();
+        if (_rafId == null) {
+          animate();
+        }
+      } else {
+        // When scrolled out of view, completely stop the RAF loop
+        if (_rafId != null) {
+          cancelAnimationFrame(_rafId);
+          _rafId = null;
+        }
+      }
     },
     { threshold: 0 }
   );
@@ -102,10 +114,13 @@ function setupVisibilityObserver() {
 }
 
 function animate() {
-  _rafId = requestAnimationFrame(animate);
+  // If not visible, do not schedule or run the loop
+  if (!_isVisible) {
+    _rafId = null;
+    return;
+  }
 
-  // Skip all GPU work when the canvas is scrolled out of the viewport
-  if (!_isVisible) return;
+  _rafId = requestAnimationFrame(animate);
 
   if (heroGradientUniforms.u_isPaused.value === 0) {
     const elapsed = clock.getElapsedTime();

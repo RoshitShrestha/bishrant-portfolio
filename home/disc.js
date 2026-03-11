@@ -290,7 +290,23 @@ export default class Sketch {
 
   setupVisibilityObserver() {
     this._visibilityObserver = new IntersectionObserver(
-      ([entry]) => { this._isVisible = entry.isIntersecting; },
+      ([entry]) => {
+        const wasVisible = this._isVisible;
+        this._isVisible = entry.isIntersecting;
+
+        if (this._isVisible && !wasVisible) {
+          // When becoming visible again, restart RAF loop if needed
+          if (this.isPlaying && this._rafId == null) {
+            this.render();
+          }
+        } else if (!this._isVisible && wasVisible) {
+          // When scrolled out of view, completely stop the RAF loop
+          if (this._rafId != null) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+          }
+        }
+      },
       { threshold: 0 }
     );
     this._visibilityObserver.observe(this.renderer.domElement);
@@ -566,8 +582,7 @@ export default class Sketch {
     this.keyLight.shadow.camera.bottom = -2;
     this.keyLight.shadow.bias = -0.00005;
     this.keyLight.shadow.normalBias = 0.01;
-    this.keyLight.shadow.radius = 8;
-    this.keyLight.shadow.blurSamples = 20;
+    this.keyLight.shadow.radius = 4;
     this.scene.add(this.keyLight);
 
     // Key light - positioned in front, top right - ONLY this casts shadows
@@ -612,7 +627,7 @@ export default class Sketch {
     const titleLineHeight = titleFontSize * 1.0; // 100% line-height
 
     // Use custom font if loaded, fallback to Arial
-    const fontFamily = this.customFontLoaded ? "TT Neoris Trial" : "Arial";
+    const fontFamily = this.customFontLoaded ? "Interdisplay" : "Arial";
 
     // Measure number width
     ctx.font = `${numberFontSize}px ${fontFamily}`;
@@ -662,12 +677,12 @@ export default class Sketch {
 
       // Chrome/metallic sticker look
       color: 0xffffff,
-      metalness: 0.9,
-      roughness: 0.2,
+      metalness: 0.85,
+      roughness: 0.3,
 
       // Clearcoat for that glossy sticker finish
-      clearcoat: 0.999,
-      clearcoatRoughness: 0.05,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.12, // 0.05 is the default value
 
       // Reflections (envMapIntensity animates from 0 to 1.5 in animateReveal)
       envMapIntensity: 0,
@@ -999,12 +1014,13 @@ export default class Sketch {
   }
 
   render() {
-    if (this.contextLost) {
-      this._rafId = requestAnimationFrame(this._boundRender);
+    // If not playing or not visible, do not keep the RAF loop alive.
+    if (!this.isPlaying || !this._isVisible) {
+      this._rafId = null;
       return;
     }
-    if (!this.isPlaying) return;
-    if (!this._isVisible) {
+
+    if (this.contextLost) {
       this._rafId = requestAnimationFrame(this._boundRender);
       return;
     }
