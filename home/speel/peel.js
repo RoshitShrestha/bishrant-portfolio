@@ -5,7 +5,12 @@
 // import gsap from "gsap";
 import { SVGPath } from "./config.js";
 
+// Shared GSAP matchMedia instance for responsive behavior
+const mm = gsap.matchMedia();
+
 let _introTimeline = null;
+
+console.log("peel.js loaded");
 
 export function setPeelIntroTimeline(timeline) {
   _introTimeline = timeline;
@@ -122,11 +127,25 @@ export function handleResize() {
   peelHoverTL.eventCallback("onReverseComplete", () =>
     peel.setPeelPosition(WIDTH, HEIGHT / 2)
   );
+  // Attach hover listeners only on viewports wider than 1024px.
+  mm.add("(min-width: 1025px)", () => {
+    currentStripMouseEnter = () => stripHoverEnabled && peelHoverTL.play();
+    currentStripMouseLeave = () => stripHoverEnabled && peelHoverTL.reverse();
+    peelEl.addEventListener("mouseenter", currentStripMouseEnter);
+    peelEl.addEventListener("mouseleave", currentStripMouseLeave);
 
-  currentStripMouseEnter = () => stripHoverEnabled && peelHoverTL.play();
-  currentStripMouseLeave = () => stripHoverEnabled && peelHoverTL.reverse();
-  peelEl.addEventListener("mouseenter", currentStripMouseEnter);
-  peelEl.addEventListener("mouseleave", currentStripMouseLeave);
+    // Cleanup when the media query no longer matches
+    return () => {
+      if (currentStripMouseEnter) {
+        peelEl.removeEventListener("mouseenter", currentStripMouseEnter);
+      }
+      if (currentStripMouseLeave) {
+        peelEl.removeEventListener("mouseleave", currentStripMouseLeave);
+      }
+      currentStripMouseEnter = null;
+      currentStripMouseLeave = null;
+    };
+  });
 
   peel.handleDrag(function (_, x, y) {
     didDrag = true;
@@ -228,6 +247,9 @@ export function initStickerPeels(skipIntroAnim = false) {
     p.setFadeThreshold(0.8);
     p.t = 0;
 
+    // Only allow hover once the intro positioning tween completes (unless skipped).
+    let hoverEnabled = skipIntroAnim ? true : false;
+
     if (skipIntroAnim) {
       // Use the same positioning system as hover/press so there's no offset when they fire
       p.setTimeAlongPath(0);
@@ -240,6 +262,9 @@ export function initStickerPeels(skipIntroAnim = false) {
         y: targetY,
         onUpdate: function () {
           p.setPeelPosition(peelPos.x, peelPos.y);
+        },
+        onComplete: function () {
+          hoverEnabled = true;
         },
         ease: "sticker",
       });
@@ -254,8 +279,6 @@ export function initStickerPeels(skipIntroAnim = false) {
         p.setTimeAlongPath(this.targets()[0].t);
       },
     });
-
-    let hoverEnabled = true;
 
     p.handlePress(function (evt) {
       // gsap.killTweensOf(p, "t");
@@ -291,8 +314,17 @@ export function initStickerPeels(skipIntroAnim = false) {
       });
     };
 
-    p.el.addEventListener("mouseenter", onMouseEnter);
-    p.el.addEventListener("mouseleave", onMouseLeave);
+    // Enable hover only on viewports wider than 1024px.
+    mm.add("(min-width: 1025px)", () => {
+      p.el.addEventListener("mouseenter", onMouseEnter);
+      p.el.addEventListener("mouseleave", onMouseLeave);
+
+      // Cleanup when the media query no longer matches
+      return () => {
+        p.el.removeEventListener("mouseenter", onMouseEnter);
+        p.el.removeEventListener("mouseleave", onMouseLeave);
+      };
+    });
 
     _stickerCleanups.push(() => {
       p.el.removeEventListener("mouseenter", onMouseEnter);

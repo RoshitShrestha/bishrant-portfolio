@@ -4,6 +4,8 @@ let flipCtx;
 let _scrollListenerCleanup = null;
 let _hoverListenerCleanups = [];
 
+const mm = gsap.matchMedia();
+
 const createTimeline = () => {
   flipCtx && flipCtx.revert();
 
@@ -62,19 +64,6 @@ const createTimeline = () => {
       }
     });
 
-    const mainTl = gsap.timeline({
-      scrollTrigger: {
-        trigger: section,
-        start: "top top",
-        end: "bottom top",
-        pin: pinEl,
-        scrub: true,
-        pinSpacing: false,
-        invalidateOnRefresh: true,
-        anticipatePin: 1,
-      },
-    });
-
     const finalState = Flip.getState(finalBox);
 
     // ========== REMOVING HOVER ON SCROLL ==========
@@ -89,7 +78,6 @@ const createTimeline = () => {
       if (hoveredCardParent) resetCardParent(hoveredCardParent);
     }
 
-    let scrollDebounce;
     let hasPointerMovedSinceInit = false;
     const onFirstPointerMove = () => {
       hasPointerMovedSinceInit = true;
@@ -97,23 +85,28 @@ const createTimeline = () => {
     };
     window.addEventListener("pointermove", onFirstPointerMove, { passive: true });
 
-    function onPhysicalScroll() {
-      clearTimeout(scrollDebounce);
-      scrollDebounce = setTimeout(() => {
-        resetCardIfHovered();
-        resetCardParentIfHovered();
-      }, 50);
-    }
-
-    window.addEventListener("wheel", onPhysicalScroll, { passive: true });
-    window.addEventListener("touchmove", onPhysicalScroll, { passive: true });
-
     _scrollListenerCleanup = () => {
-      window.removeEventListener("wheel", onPhysicalScroll);
-      window.removeEventListener("touchmove", onPhysicalScroll);
       window.removeEventListener("pointermove", onFirstPointerMove);
-      clearTimeout(scrollDebounce);
     };
+
+    const mainTl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top top",
+        end: "bottom top",
+        pin: pinEl,
+        scrub: true,
+        pinSpacing: false,
+        invalidateOnRefresh: true,
+        anticipatePin: 1,
+        onUpdate: (self) => {
+          if (Math.abs(self.getVelocity()) > 300) {
+            resetCardIfHovered();
+            resetCardParentIfHovered();
+          }
+        },
+      },
+    });
 
     // ========== CARD ENTRY HOVER ==========
     let baseY = new Map();
@@ -249,57 +242,59 @@ const createTimeline = () => {
     // Run once on initial load to enforce default non-hover state.
     cardParents.forEach((cardParent) => resetCardParent(cardParent));
 
-    cardParents.forEach((cardParent) => {
-      const refs = _parentRefs.get(cardParent);
-      if (!refs) return;
+    mm.add("(min-width: 1025px)", () => {
+      cardParents.forEach((cardParent) => {
+        const refs = _parentRefs.get(cardParent);
+        if (!refs) return;
 
-      const { previewFiles, cardFolder } = refs;
+        const { previewFiles, cardFolder } = refs;
 
-      const onEnter = () => {
-        if (!hasPointerMovedSinceInit) return;
-        if (!cardParent.classList.contains("is-placed")) return;
+        const onEnter = () => {
+          if (!hasPointerMovedSinceInit) return;
+          if (!cardParent.classList.contains("is-placed")) return;
 
-        hoveredCardParent = cardParent;
+          hoveredCardParent = cardParent;
 
-        cardParents.forEach((sibling) => {
-          if (sibling !== cardParent) sibling.classList.add("is-disabled");
-        });
-
-        previewFiles.forEach((previewFile, fileIndex) => {
-          let rotation;
-          if (fileIndex === 0) {
-            rotation = gsap.utils.random(-20, -10);
-          } else if (fileIndex === 1) {
-            rotation = gsap.utils.random(-10, 10);
-          } else {
-            rotation = gsap.utils.random(10, 20);
-          }
-
-          gsap.to(previewFile, {
-            y: "-90%",
-            rotation,
-            scale: 1,
-            duration: 0.25,
-            ease: "back.out(1.7)",
-            delay: fileIndex * 0.025,
-            overwrite: "auto",
+          cardParents.forEach((sibling) => {
+            if (sibling !== cardParent) sibling.classList.add("is-disabled");
           });
+
+          previewFiles.forEach((previewFile, fileIndex) => {
+            let rotation;
+            if (fileIndex === 0) {
+              rotation = gsap.utils.random(-20, -10);
+            } else if (fileIndex === 1) {
+              rotation = gsap.utils.random(-10, 10);
+            } else {
+              rotation = gsap.utils.random(10, 20);
+            }
+
+            gsap.to(previewFile, {
+              y: "-90%",
+              rotation,
+              scale: 1,
+              duration: 0.25,
+              ease: "back.out(1.7)",
+              delay: fileIndex * 0.025,
+              overwrite: "auto",
+            });
+          });
+
+          gsap.to(cardFolder, { transformOrigin: "50% 50%", scale: 1.05, ease: "power1.inOut", duration: 0.3 });
+          gsap.to(refs.hoverBg, { opacity: 1, ease: "power1.inOut", duration: 0.3 });
+          gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)" });
+          gsap.to(refs.desc, { color: "#FFEBB6", ease: "power1.inOut", duration: 0.3 });
+        };
+
+        const onLeave = () => resetCardParent(cardParent);
+
+        cardParent.addEventListener("mouseenter", onEnter);
+        cardParent.addEventListener("mouseleave", onLeave);
+
+        _hoverListenerCleanups.push(() => {
+          cardParent.removeEventListener("mouseenter", onEnter);
+          cardParent.removeEventListener("mouseleave", onLeave);
         });
-
-        gsap.to(cardFolder, { transformOrigin: "50% 50%", scale: 1.05, ease: "power1.inOut", duration: 0.3 });
-        gsap.to(refs.hoverBg, { opacity: 1, ease: "power1.inOut", duration: 0.3 });
-        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)" });
-        gsap.to(refs.desc, { color: "#FFEBB6", ease: "power1.inOut", duration: 0.3 });
-      };
-
-      const onLeave = () => resetCardParent(cardParent);
-
-      cardParent.addEventListener("mouseenter", onEnter);
-      cardParent.addEventListener("mouseleave", onLeave);
-
-      _hoverListenerCleanups.push(() => {
-        cardParent.removeEventListener("mouseenter", onEnter);
-        cardParent.removeEventListener("mouseleave", onLeave);
       });
     });
 
