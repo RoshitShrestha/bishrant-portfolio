@@ -144,8 +144,7 @@ export default class Sketch {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.8;
 
-    // Enable shadow mapping
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.container.appendChild(this.renderer.domElement);
@@ -195,6 +194,7 @@ export default class Sketch {
 
     this.isPlaying = true;
     this.isScrolling = false;
+    this._shadersReady = false;
 
     // Mouse tilt: raycaster and progress tracking
     this.mouse = new THREE.Vector2();
@@ -237,14 +237,21 @@ export default class Sketch {
     this._isVisible = true;
     this._visibilityObserver = null;
 
-    // Load custom font before creating objects
-    this.loadCustomFont().then(() => {
+    this.loadCustomFont().then(async () => {
       this.addObjects();
+      await this.renderer.compileAsync(this.scene, this.camera);
+      this._shadersReady = true;
       this.animateReveal();
+      this.render();
+
+      this._shadowDelayedCall = gsap.delayedCall(1, () => {
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.needsUpdate = true;
+        this._shadowDelayedCall = null;
+      });
     });
     this.addLights();
     this.resize();
-    this.render();
 
     this.loadEnvironment();
 
@@ -668,9 +675,6 @@ export default class Sketch {
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
 
-    // Use MeshPhysicalMaterial for clearcoat support
-    // envMap will be set later when HDR loads
-    // clearcoat 0.999 avoids exact 1.0 to prevent shader precision warnings (X4122) on context restore
     this.chromeStickerMaterial = new THREE.MeshPhysicalMaterial({
       map: texture,
       transparent: true,
@@ -686,7 +690,7 @@ export default class Sketch {
 
       // Reflections (envMapIntensity animates from 0 to 1.5 in animateReveal)
       envMapIntensity: 0,
-      reflectivity: 1.0,
+      reflectivity: 0.98,
 
       side: THREE.DoubleSide,
       alphaTest: 0.1,
@@ -727,6 +731,15 @@ export default class Sketch {
           }
 
           this.envMap = envMap;
+
+          if (!this.renderer.shadowMap.enabled) {
+            this.renderer.shadowMap.enabled = true;
+            this.renderer.shadowMap.needsUpdate = true;
+          }
+
+          if (this._shadersReady) {
+            this.renderer.compileAsync(this.scene, this.camera);
+          }
 
           texture.dispose();
           pmrem.dispose();
@@ -1015,7 +1028,7 @@ export default class Sketch {
 
   render() {
     // If not playing or not visible, do not keep the RAF loop alive.
-    if (!this.isPlaying || !this._isVisible) {
+    if (!this.isPlaying || !this._isVisible || !this._shadersReady) {
       this._rafId = null;
       return;
     }
@@ -1069,6 +1082,7 @@ export default class Sketch {
 
     if (typeof this._scrollUnsubscribe === "function") this._scrollUnsubscribe();
     if (this._scrollDelayedCall) this._scrollDelayedCall.kill();
+    if (this._shadowDelayedCall) this._shadowDelayedCall.kill();
     if (this._visibilityObserver) {
       this._visibilityObserver.disconnect();
       this._visibilityObserver = null;

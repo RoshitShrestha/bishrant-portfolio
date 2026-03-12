@@ -15,7 +15,7 @@ if (typeof history !== "undefined") history.scrollRestoration = "manual";
 if (typeof window !== "undefined") window.scrollTo(0, 0);
 
 window.addEventListener("load", () => {
-  document.body.classList.add("loaded");
+  // document.body.classList.add("loaded");
   if (!skipIntro) lockScroll();
 
   // Show intro perspective when not skipping intro (run on load so DOM is ready)
@@ -59,7 +59,9 @@ window.addEventListener("load", () => {
       loaderGridAnimation();
     }, 100);
   } else {
-    loaderGridAnimation();
+    setTimeout(() => {
+      loaderGridAnimation();
+    }, 100);
   }
 });
 

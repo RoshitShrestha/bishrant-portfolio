@@ -313,8 +313,6 @@ export function loaderGridAnimation() {
 
   let q = gsap.utils.selector(loadGrid);
 
-  // gsap.set(loadGrid, { display: "grid" });
-
   gsap.to(
     q(".load_grid-item"), 
     {

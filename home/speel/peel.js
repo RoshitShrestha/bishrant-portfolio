@@ -172,6 +172,7 @@ export function handleResize() {
 // ——— Independent setup for .peel-sticker elements (no relation to #strip) ———
 // Call after intro is visible (e.g. from main.js load handler) so stickers have real dimensions.
 let _stickerCleanups = [];
+const _stickerHTMLCache = new Map();
 
 export function disposeStickerPeels() {
   _stickerCleanups.forEach((fn) => fn());
@@ -188,6 +189,13 @@ export function initStickerPeels(skipIntroAnim = false) {
   if (!peelElements.length) return;
 
   peelElements.forEach((el, i) => {
+    const cacheKey = el.id || `peel-sticker-${i}`;
+    if (!_stickerHTMLCache.has(cacheKey)) {
+      _stickerHTMLCache.set(cacheKey, el.innerHTML);
+    } else {
+      el.innerHTML = _stickerHTMLCache.get(cacheKey);
+    }
+
     const width = el.offsetWidth;
     const height = el.offsetHeight;
 
