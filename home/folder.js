@@ -152,6 +152,8 @@ const createTimeline = () => {
 
     mainTl.addLabel("initial", "+=0.3");
 
+    mainTl.fromTo(pinEl, {backgroundColor: "rgba(0, 0, 0, 0)"}, {backgroundColor: "rgba(0, 0, 0, 1)", duration: 0.1, ease: "none"}, mainTl.labels.initial);
+
     // ========== CARD PLACE ==========
     cardParents.forEach((cardParent, i) => {
       const q = gsap.utils.selector(cardParent);

@@ -9,7 +9,7 @@ import { skipIntro, scrollToTargetFromUrl } from "./navigation.js";
 import { lockScroll } from "./scroll.js";
 import { handleResize as peelHandleResize, initStickerPeels, disposeStickerPeels } from "./peel.js";
 import { init, dispose as disposeInit } from "./init.js";
-import { loaderGridAnimation } from "./timelines.js";
+import { loaderGridAnimation, loaderBlockAnimation } from "./timelines.js";
 
 if (typeof history !== "undefined") history.scrollRestoration = "manual";
 if (typeof window !== "undefined") window.scrollTo(0, 0);
@@ -56,7 +56,7 @@ window.addEventListener("load", () => {
     
     setTimeout(() => {
       scrollToTargetFromUrl();
-      loaderGridAnimation();
+      loaderBlockAnimation();
     }, 100);
   } else {
     setTimeout(() => {

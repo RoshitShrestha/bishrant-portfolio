@@ -63,8 +63,17 @@ export const postProcessMaterial = new THREE.ShaderMaterial({
             float bulgeRadius = r + r * (1.0 - r) * bulgeStrength;
             uv = vec2(cos(theta), sin(theta)) * bulgeRadius;
         }
-        uv.x /= uResolution.x / uResolution.y;
-        vec2 finalUV = uv * 0.5 + 0.5;
+        uv.x /= uResolution.x / uResolution.y;        
+        
+        vec2 finalUV;
+        if (uResolution.y > uResolution.x) {
+            // portrait: height > width
+            finalUV = uv / 3.5 + 0.5;
+        } else {
+            // landscape: width >= height
+            finalUV = uv * 0.5 + 0.5;
+        }
+
         float innerRadius = 0.3;
         float outerRadius = 0.7;
         float bulgeMask = smoothstep(innerRadius, outerRadius, r);
@@ -78,4 +87,5 @@ const postProcessGeometry = new THREE.PlaneGeometry(2, 2);
 const postProcessMesh = new THREE.Mesh(postProcessGeometry, postProcessMaterial);
 postProcessMesh.frustumCulled = false;
 export const postProcessScene = new THREE.Scene();
-postProcessScene.add(postProcessMesh);
+postProcessScene.add(postProcessMesh); 
+

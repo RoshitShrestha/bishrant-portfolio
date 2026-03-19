@@ -14,9 +14,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const CONFIG = {
       wallThickness: 200,
 
-      gravity: 0.8,            // was 1.15
-      restitution: 0.32,       // was 0.15
-      friction: 0.5,           // slightly less sticky
+      gravity: 1,            // was 1.15
+      restitution: 0.85,       // was 0.15
+      friction: 0.3,           // slightly less sticky
 
       frictionAirRect: 0.01,   // was 0.005
       frictionAirCircle: 0.015,
@@ -289,7 +289,7 @@ document.addEventListener("DOMContentLoaded", () => {
         for (let i = 0; i < ACTIVE_TAGS.length; i++) {
           const tag = ACTIVE_TAGS[i];
           const x = Math.random() * container.offsetWidth;
-          const y = -150 - i * 40;
+          const y = -100 - i * 40;
 
           const body = await createTagBody(tag, x, y);
           Composite.add(engine.world, body);

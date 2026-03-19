@@ -308,8 +308,10 @@ function setupHeroScrollTimeline() {
 export function loaderGridAnimation() {
 
   const loadGrid = document.querySelector("[data-load-grid]");
+  const transitionBlock = document.querySelector("[data-transition-page-block]");
 
   if (!loadGrid) return;
+  if(transitionBlock) gsap.set(transitionBlock, { display: "none" });
 
   let q = gsap.utils.selector(loadGrid);
 
@@ -324,4 +326,33 @@ export function loaderGridAnimation() {
       },
     },
   );
+}
+
+export function loaderBlockAnimation() {
+  const loadGrid = document.querySelector("[data-load-grid]");
+  const transitionBlock = document.querySelector("[data-transition-page-block]");
+
+  if (!transitionBlock) return Promise.resolve();
+  if(loadGrid) gsap.set(loadGrid, { display: "none" });
+
+  return new Promise((resolve) => {
+    const transitionTl = gsap.timeline({
+      onComplete: () => {
+        gsap.set(transitionBlock, { display: "none" });
+        resolve();
+      }
+    });
+    
+
+    transitionTl.to(transitionBlock, {
+      backgroundColor: "hsla(0, 0.00%, 9.00%, 0.00)",
+      duration: 0.8,
+      ease: "power2.inOut",
+    });
+    transitionTl.to(transitionBlock, {
+      backdropFilter: "blur(0px)",
+      duration: 0.4,
+      ease: "power2.inOut",
+    },  "<+=0.4");
+  }); 
 }

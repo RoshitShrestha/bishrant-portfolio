@@ -1,27 +1,29 @@
-// gsap.registerPlugin(ScrollTrigger, Observer);
-
 let flipCtx;
 
-function loaderGridAnimation() {
-  const loadGrid = document.querySelector("[data-load-grid]");
+function loaderAnimation() {
+  const transitionBlock = document.querySelector("[data-transition-page-block]");
 
-  if (!loadGrid) return Promise.resolve();
+  if (!transitionBlock) return Promise.resolve();
 
-  let q = gsap.utils.selector(loadGrid);
 
   return new Promise((resolve) => {
-    gsap.to(
-      q(".load_grid-item"), 
-      {
-        opacity: 0,
-        duration: 0.001,
-        stagger: { amount: 0.75, from: "random"},
-        onComplete: () => {
-          gsap.set(loadGrid, { display: "none" });
-          resolve();
-        },
-      },
-    );
+    const transitionTl = gsap.timeline({
+      onComplete: () => {
+        gsap.set(transitionBlock, { display: "none" });
+        resolve();
+      }
+    });
+
+    transitionTl.to(transitionBlock, {
+      backgroundColor: "hsla(0, 0.00%, 9.00%, 0.00)",
+      duration: 0.8,
+      ease: "power2.inOut",
+    });
+    transitionTl.to(transitionBlock, {
+      backdropFilter: "blur(0px)",
+      duration: 0.4,
+      ease: "power2.inOut",
+    },  "<+=0.4");
   });
 }
 
@@ -30,6 +32,7 @@ const createTimeline = () => {
 
   flipCtx = gsap.context(() => {
     const heroTitles = document.querySelectorAll("[data-about-hero-title]");
+    const heroLogo = document.querySelector("[data-about-hero-logo]");
 
     const heroTl = gsap.timeline({
       paused: true,
@@ -39,6 +42,20 @@ const createTimeline = () => {
       //   end: "bottom bottom",
       //   scrub: true,
       // },
+    });
+
+    heroTl.fromTo(heroLogo, {
+      opacity: 0,
+      filter: "blur(20px)",
+      yPercent: -10,
+      z: 600,
+    }, {
+      opacity: 1,
+      filter: "blur(0px)",
+      yPercent: 0,
+      z: 0,
+      duration: 1,
+      ease: "power3.out",
     });
 
     document.fonts.ready.then(() => {
@@ -59,7 +76,7 @@ const createTimeline = () => {
         heroTl.fromTo(
           heroTitleEl,
           {
-            "will-change": "opacity, transform",
+            // "will-change": "opacity, transform",
             opacity: 0,
             filter: "blur(20px)",
             xPercent: "random(-100, 100)",
@@ -104,7 +121,7 @@ const createTimeline = () => {
       });
 
       // GSDevTools.create({ animation: heroTl });
-      loaderGridAnimation().then(() => {
+      loaderAnimation().then(() => {
         heroTl.play();
       });
     });

@@ -50,7 +50,7 @@ export function scrollToTargetFromUrl() {
     const section = document.querySelector("#projects-section");
     if (section) {
       lenis.scrollTo(section, {
-        offset: window.innerHeight * 2.4,
+        offset: window.innerHeight * 1.7,
         // duration: 0,
         immediate: true,
       });

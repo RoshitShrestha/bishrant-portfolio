@@ -10,8 +10,6 @@ const mm = gsap.matchMedia();
 
 let _introTimeline = null;
 
-console.log("peel.js loaded");
-
 export function setPeelIntroTimeline(timeline) {
   _introTimeline = timeline;
 }

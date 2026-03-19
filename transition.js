@@ -8,6 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const transitionAnchors = document.querySelectorAll("[data-project-transition-anchor]");
   const loadGrid = document.querySelector("[data-load-grid]");
+  const transitionWrapper = document.querySelector("[data-transition-page-wrapper]");
+  const transitionBlock = document.querySelector("[data-transition-page-block]");
 
   // gsap.set(transitionWrapper, { width: window.clientWidth });
 
@@ -18,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let destination = anchor.getAttribute("href");
 
       const cardParent = anchor.closest('[data-home-project="card-parent"]');
+      const pinEl = document.querySelector('[data-home-project="pin"]');
 
       const currentBg = anchor.querySelector("[data-folder-transition-img]");
       const currentLogo = anchor.querySelector("[data-folder-img]");
@@ -82,6 +85,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }),
         )
 
+        tl.fromTo(pinEl, {backgroundColor: "hsl(0, 0%, 0%)"}, {backgroundColor: "hsl(0, 0%, 9%)", duration: 0.8, ease: "none"}, "<");
+
         tl.fromTo(currentBg, {
           backgroundImage: initialGradient,
           borderRadius: 5,
@@ -100,19 +105,28 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
 
     let destination = transitionAnchor.getAttribute("href");
-    let q = gsap.utils.selector(loadGrid);
 
-    gsap.set(loadGrid, { display: "grid" });
-    gsap.fromTo(q(".load_grid-item"), {
-      opacity: 0,
-    }, {
-      opacity: 1,
-      duration: 0.001,
-      stagger: { amount: 0.5, from: "random"},
+    const transitionTl = gsap.timeline({
       onComplete: () => {
         window.location = destination;
       }
     });
+    gsap.set(transitionBlock, { display: "block" });
+
+    transitionTl.fromTo(transitionBlock, {
+      backgroundColor: "hsla(0, 0.00%, 9.00%, 0.00)",
+    }, {
+      backgroundColor: "hsla(0, 0.00%, 9.00%, 1.00)",
+      duration: 0.8,
+      ease: "power2.inOut",
+    });
+    transitionTl.fromTo(transitionBlock, {
+      backdropFilter: "blur(0px)",
+    }, {
+      backdropFilter: "blur(5px)",
+      duration: 0.4,
+      ease: "power2.inOut",
+    },  "<");
   }
 
   transitionAnchors.forEach((transitionAnchor) => {
