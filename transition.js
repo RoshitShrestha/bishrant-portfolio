@@ -32,8 +32,8 @@ document.addEventListener("DOMContentLoaded", () => {
         initialGradient = "linear-gradient(180deg, hsl(282, 100%, 95%), hsl(300, 83%, 94%) 40%, hsl(336, 100%, 93%))";
         finalGradient = "linear-gradient(135deg, hsl(291, 49%, 49%), hsl(279, 39%, 40%) 40%, hsl(259, 72%, 22%))";
       } else if (project === "nic") {
-        initialGradient = "linear-gradient(180deg, hsl(0, 100%, 18%), hsl(0, 63%, 50%))";
-        finalGradient = "linear-gradient(hsl(0, 79%, 40%), hsl(0, 79%, 18%))";
+        initialGradient = "linear-gradient(180deg, hsl(0, 63%, 50%), hsl(0, 100%, 18%))";
+        finalGradient = "linear-gradient(180deg, hsl(0, 79%, 40%), hsl(0, 79%, 18%))";
       } else if (project === "metro-mates") {
         initialGradient = "linear-gradient(180deg, hsl(40, 100%, 99%), hsl(35, 100%, 87%))";
         finalGradient = "linear-gradient(135deg, hsl(22, 88%, 39%), hsl(23, 100%, 38%))";
@@ -98,6 +98,8 @@ document.addEventListener("DOMContentLoaded", () => {
           ease: "power3.in" 
         }, "<");
       }
+
+      
     });
   });
 

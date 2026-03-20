@@ -150,7 +150,7 @@ const createTimeline = () => {
       );
     });
 
-    mainTl.addLabel("initial", "+=0.3");
+    mainTl.addLabel("initial", "+=0.1");
 
     mainTl.fromTo(pinEl, {backgroundColor: "rgba(0, 0, 0, 0)"}, {backgroundColor: "rgba(0, 0, 0, 1)", duration: 0.1, ease: "none"}, mainTl.labels.initial);
 
@@ -211,7 +211,7 @@ const createTimeline = () => {
       );
     });
 
-    mainTl.addLabel("final", "+=0.1");
+    mainTl.addLabel("final", "+=0.0");
 
     // ========== CARD PLACE HOVER ==========
     function resetCardParent(cardParent) {
@@ -324,7 +324,7 @@ const createTimeline = () => {
             gsap.set(card, { pointerEvents: "auto" });
           },
         },
-        mainTl.labels.final + i * 0.1,
+        mainTl.labels.final + i * 0.1 + 0.2,
       );
 
       mainTl.add(
@@ -337,15 +337,108 @@ const createTimeline = () => {
           ease: "power3.in",
           immediateRender: false,
         }),
-        mainTl.labels.final + i * 0.1,
+        mainTl.labels.final + i * 0.1 + 0.2,
       );
 
       mainTl.to(
         card,
         { transformOrigin: "center", rotation: targetRotation, duration: 0.4, ease: "power3.in" },
-        mainTl.labels.final + i * 0.1,
+        mainTl.labels.final + i * 0.1 + 0.2,
       );
     });
+
+    // ========== CUSTOM SNAP (bypasses Lenis inertia) ==========
+    // Listens to raw user-input events (wheel / touch) so the idle timer
+    // starts when the *user* stops, not when Lenis's smooth inertia settles.
+    const SNAP_IDLE_DELAY = 600;        // ms after last input before snapping
+    const SNAP_COMMIT_THRESHOLD = 0.3;  // zone % to commit forward (below = revert)
+    const SNAP_SCROLL_DURATION = 1.2;   // seconds for the snap scroll animation
+    const SNAP_REVERT_THRESHOLD_OUT = 0.5;  // zone % to revert to placed state
+
+    const st = mainTl.scrollTrigger;
+    let _snapTimer = null;
+    let _lastPointerX = 0;
+    let _lastPointerY = 0;
+
+    const onPointerMove = (e) => {
+      _lastPointerX = e.clientX;
+      _lastPointerY = e.clientY;
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    function retriggerHoverUnderCursor() {
+      ScrollTrigger.update();
+      const el = document.elementFromPoint(_lastPointerX, _lastPointerY);
+      if (!el) return;
+      const parent = el.closest("[data-home-project='card-parent']");
+      if (parent) {
+        parent.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+      }
+    }
+
+    function getSnapTarget() {
+      const dur = mainTl.duration();
+      if (!dur || !st.isActive) return null;
+      const progress = st.progress;
+      const initialP = mainTl.labels.initial / dur;
+      const finalP = mainTl.labels.final / dur;
+
+      // Card placement zone: snap forward or revert
+      if (progress > initialP + 0.01 && progress < finalP - 0.01) {
+        const zone = (progress - initialP) / (finalP - initialP);
+        const targetP = zone > SNAP_COMMIT_THRESHOLD ? finalP : initialP;
+        return st.start + targetP * (st.end - st.start);
+      }
+
+      // Card out zone: revert to placed state if < threshold
+      if (progress > finalP + 0.01 && progress < 1 - 0.01) {
+        const zone = (progress - finalP) / (1 - finalP);
+        if (zone < SNAP_REVERT_THRESHOLD_OUT) {
+          return st.start + finalP * (st.end - st.start);
+        }
+      }
+
+      return null;
+    }
+
+    function attemptSnap() {
+      _snapTimer = null;
+      const target = getSnapTarget();
+      if (target !== null && typeof lenis !== "undefined") {
+        lenis.scrollTo(target, {
+          duration: SNAP_SCROLL_DURATION,
+          easing: (t) =>
+            t < 0.5
+              ? 2 * t * t
+              : 1 - Math.pow(-2 * t + 2, 2) / 2,
+          onComplete: retriggerHoverUnderCursor,
+        });
+      }
+    }
+
+    function scheduleSnap() {
+      clearTimeout(_snapTimer);
+      _snapTimer = setTimeout(attemptSnap, SNAP_IDLE_DELAY);
+    }
+
+    function cancelSnap() {
+      clearTimeout(_snapTimer);
+      _snapTimer = null;
+    }
+
+    window.addEventListener("wheel", scheduleSnap, { passive: true });
+    window.addEventListener("touchend", scheduleSnap, { passive: true });
+    window.addEventListener("touchstart", cancelSnap, { passive: true });
+
+    const _prevCleanup = _scrollListenerCleanup;
+    _scrollListenerCleanup = () => {
+      if (_prevCleanup) _prevCleanup();
+      cancelSnap();
+      window.removeEventListener("wheel", scheduleSnap);
+      window.removeEventListener("touchend", scheduleSnap);
+      window.removeEventListener("touchstart", cancelSnap);
+      window.removeEventListener("pointermove", onPointerMove);
+    };
   });
 };
 

@@ -3,6 +3,8 @@ gsap.registerPlugin(ScrollTrigger);
 document.addEventListener("DOMContentLoaded", () => {
 
   const metroMatterAnim = () => {
+    const imageDimensionCache = new Map();
+
     function getScale() {
       const width = window.innerWidth;
       return Math.min(1, Math.max(0.8, 0.8 + (1 - 0.8) * ((width - 1024) / (1440 - 1024))));
@@ -29,7 +31,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     function loadImageDimensions(src) {
-      return new Promise(resolve => {
+      if (imageDimensionCache.has(src)) return imageDimensionCache.get(src);
+
+      const dimensionPromise = new Promise(resolve => {
         const img = new Image();
         img.onload = () => {
           resolve({
@@ -37,8 +41,14 @@ document.addEventListener("DOMContentLoaded", () => {
             height: img.naturalHeight
           });
         };
+        img.onerror = () => {
+          resolve({ width: 1, height: 1 });
+        };
         img.src = src;
       });
+
+      imageDimensionCache.set(src, dimensionPromise);
+      return dimensionPromise;
     }
 
     function createMatterWorld(containerId, shapeType = "circle") {
@@ -135,9 +145,9 @@ document.addEventListener("DOMContentLoaded", () => {
       ];
 
       const engine = Engine.create();
-      engine.positionIterations = 10; // was 6
-      engine.velocityIterations = 8; // was 4
-      engine.constraintIterations = 4;
+      engine.positionIterations = 8;
+      engine.velocityIterations = 6;
+      engine.constraintIterations = 2;
       engine.world.gravity.y = CONFIG.gravity;
 
       const render = Render.create({
@@ -153,6 +163,9 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const runner = Runner.create();
+      const MAX_SPEED = 20;
+      const MAX_SPEED_SQ = MAX_SPEED * MAX_SPEED;
+      let containerWidth = container.offsetWidth;
 
       const ACTIVE_TAGS = shapeType === "circle" ? CIRCLE_TAGS : TAGS;
 
@@ -235,39 +248,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
           // limiting max velocity
           body.plugin.wrap = false;
-
-          Matter.Events.on(engine, "beforeUpdate", () => {
-            const maxSpeed = 20;
-
-            engine.world.bodies.forEach(b => {
-              const speed = Math.sqrt(
-                b.velocity.x * b.velocity.x +
-                b.velocity.y * b.velocity.y
-              );
-
-              if (speed > maxSpeed) {
-                const scale = maxSpeed / speed;
-                Matter.Body.setVelocity(b, {
-                  x: b.velocity.x * scale,
-                  y: b.velocity.y * scale
-                });
-              }
-            });
-          });
-          Matter.Events.on(engine, "afterUpdate", () => {
-            const width = container.offsetWidth;
-          
-            engine.world.bodies.forEach(b => {
-              if (!b.isStatic) {
-                if (b.position.x < 0) {
-                  Matter.Body.setPosition(b, { x: 10, y: b.position.y });
-                }
-                if (b.position.x > width) {
-                  Matter.Body.setPosition(b, { x: width - 10, y: b.position.y });
-                }
-              }
-            });
-          });
         }
 
         // Body.setAngle(body, Math.random() * Math.PI);
@@ -285,15 +265,44 @@ document.addEventListener("DOMContentLoaded", () => {
         return body;
       }
 
-      async function spawnBodies() {
-        for (let i = 0; i < ACTIVE_TAGS.length; i++) {
-          const tag = ACTIVE_TAGS[i];
-          const x = Math.random() * container.offsetWidth;
-          const y = -100 - i * 40;
+      Matter.Events.on(engine, "beforeUpdate", () => {
+        engine.world.bodies.forEach((b) => {
+          if (b.isStatic) return;
 
-          const body = await createTagBody(tag, x, y);
-          Composite.add(engine.world, body);
-        }
+          const velocityX = b.velocity.x;
+          const velocityY = b.velocity.y;
+          const speedSq = velocityX * velocityX + velocityY * velocityY;
+
+          if (speedSq > MAX_SPEED_SQ) {
+            const speed = Math.sqrt(speedSq);
+            const ratio = MAX_SPEED / speed;
+            Matter.Body.setVelocity(b, {
+              x: velocityX * ratio,
+              y: velocityY * ratio
+            });
+          }
+        });
+      });
+
+      Matter.Events.on(engine, "afterUpdate", () => {
+        engine.world.bodies.forEach((b) => {
+          if (b.isStatic) return;
+          if (b.position.x < 0) {
+            Matter.Body.setPosition(b, { x: 10, y: b.position.y });
+          } else if (b.position.x > containerWidth) {
+            Matter.Body.setPosition(b, { x: containerWidth - 10, y: b.position.y });
+          }
+        });
+      });
+
+      async function spawnBodies() {
+        const createTasks = ACTIVE_TAGS.map((tag, i) => {
+          const x = Math.random() * containerWidth;
+          const y = -100 - i * 40;
+          return createTagBody(tag, x, y);
+        });
+        const bodies = await Promise.all(createTasks);
+        Composite.add(engine.world, bodies);
       }
 
       spawnBodies();
@@ -316,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
       function updateBounds() {
         const width = container.offsetWidth;
         const height = container.offsetHeight;
+        containerWidth = width;
 
         render.canvas.width = width;
         render.canvas.height = height;
