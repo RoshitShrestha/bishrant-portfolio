@@ -74,8 +74,8 @@ const createTimeline = () => {
       if (hoveredCard) resetCard(hoveredCard);
     }
 
-    function resetCardParentIfHovered() {
-      if (hoveredCardParent) resetCardParent(hoveredCardParent);
+    function resetCardParentIfHovered(immediate) {
+      if (hoveredCardParent) resetCardParent(hoveredCardParent, immediate);
     }
 
     let hasPointerMovedSinceInit = false;
@@ -99,12 +99,12 @@ const createTimeline = () => {
         pinSpacing: false,
         invalidateOnRefresh: true,
         anticipatePin: 1,
-        onUpdate: (self) => {
-          if (Math.abs(self.getVelocity()) > 300) {
-            resetCardIfHovered();
-            resetCardParentIfHovered();
-          }
-        },
+          onUpdate: (self) => {
+            if (Math.abs(self.getVelocity()) > 300) {
+              resetCardIfHovered();
+              resetCardParentIfHovered(true);
+            }
+          },
       },
     });
 
@@ -151,8 +151,6 @@ const createTimeline = () => {
     });
 
     mainTl.addLabel("initial", "+=0.1");
-
-    mainTl.fromTo(pinEl, {backgroundColor: "rgba(0, 0, 0, 0)"}, {backgroundColor: "rgba(0, 0, 0, 1)", duration: 0.1, ease: "none"}, mainTl.labels.initial);
 
     // ========== CARD PLACE ==========
     cardParents.forEach((cardParent, i) => {
@@ -214,35 +212,48 @@ const createTimeline = () => {
     mainTl.addLabel("final", "+=0.0");
 
     // ========== CARD PLACE HOVER ==========
-    function resetCardParent(cardParent) {
-      if (!cardParent || !cardParent.classList.contains("is-placed")) return;
+    function resetCardParent(cardParent, immediate) {
+      if (!cardParent) return;
       const refs = _parentRefs.get(cardParent);
       if (!refs) return;
 
       cardParents.forEach((sibling) => sibling.classList.remove("is-disabled"));
 
-      refs.previewFiles.forEach((previewFile, fileIndex) => {
-        gsap.to(previewFile, {
-          y: "0%",
-          rotation: 0,
-          scale: 0.8,
-          duration: 0.25,
-          ease: "back.out(1.7)",
-          delay: fileIndex * 0.025,
-          overwrite: "auto",
-        });
-      });
+      refs.previewFiles.forEach((pf) => gsap.killTweensOf(pf));
+      gsap.killTweensOf(refs.cardFolder);
+      gsap.killTweensOf(refs.hoverBg);
 
-      gsap.to(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1, ease: "power1.inOut", duration: 0.3 });
-      gsap.to(refs.hoverBg, { opacity: 0, ease: "power1.inOut", duration: 0.3 });
-      gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
-      gsap.to(refs.desc, { color: "#FFF", ease: "power1.inOut", duration: 0.3 });
+      if (immediate) {
+        refs.previewFiles.forEach((pf) => {
+          gsap.set(pf, { y: "0%", rotation: 0, scale: 0.8 });
+        });
+        gsap.set(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1 });
+        gsap.set(refs.hoverBg, { opacity: 0 });
+        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+        gsap.set(refs.desc, { color: "#FFF" });
+      } else {
+        refs.previewFiles.forEach((previewFile, fileIndex) => {
+          gsap.to(previewFile, {
+            y: "0%",
+            rotation: 0,
+            scale: 0.8,
+            duration: 0.25,
+            ease: "back.out(1.7)",
+            delay: fileIndex * 0.025,
+            overwrite: "auto",
+          });
+        });
+        gsap.to(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
+        gsap.to(refs.hoverBg, { opacity: 0, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
+        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+        gsap.to(refs.desc, { color: "#FFF", ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
+      }
 
       if (hoveredCardParent === cardParent) hoveredCardParent = null;
     }
 
     // Run once on initial load to enforce default non-hover state.
-    cardParents.forEach((cardParent) => resetCardParent(cardParent));
+    cardParents.forEach((cardParent) => resetCardParent(cardParent, true));
 
     mm.add("(min-width: 1025px)", () => {
       cardParents.forEach((cardParent) => {
@@ -254,6 +265,7 @@ const createTimeline = () => {
         const onEnter = () => {
           if (!hasPointerMovedSinceInit) return;
           if (!cardParent.classList.contains("is-placed")) return;
+          if (st && Math.abs(st.getVelocity()) > 100) return;
 
           hoveredCardParent = cardParent;
 
@@ -282,10 +294,10 @@ const createTimeline = () => {
             });
           });
 
-          gsap.to(cardFolder, { transformOrigin: "50% 50%", scale: 1.05, ease: "power1.inOut", duration: 0.3 });
-          gsap.to(refs.hoverBg, { opacity: 1, ease: "power1.inOut", duration: 0.3 });
+          gsap.to(cardFolder, { transformOrigin: "50% 50%", scale: 1.05, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
+          gsap.to(refs.hoverBg, { opacity: 1, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
           gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF68D, #FFF14B)" });
-          gsap.to(refs.desc, { color: "#FFEBB6", ease: "power1.inOut", duration: 0.3 });
+          gsap.to(refs.desc, { color: "#FFEBB6", ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
         };
 
         const onLeave = () => resetCardParent(cardParent);
@@ -316,6 +328,7 @@ const createTimeline = () => {
         {
           duration: 0.001,
           onStart: () => {
+            if (hoveredCardParent === cardParent) resetCardParent(cardParent, true);
             cardParent.classList.remove("is-placed");
             gsap.set(card, { pointerEvents: "none" });
           },
