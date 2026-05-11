@@ -95,12 +95,13 @@ const createTimeline = () => {
         start: "top top",
         end: "bottom top",
         pin: pinEl,
-        scrub: true,
+        scrub: 0.8,
+        fastScrollEnd: false,
         pinSpacing: false,
         invalidateOnRefresh: true,
         anticipatePin: 1,
           onUpdate: (self) => {
-            if (Math.abs(self.getVelocity()) > 300) {
+            if (Math.abs(self.getVelocity()) > 500) {
               resetCardIfHovered();
               resetCardParentIfHovered(true);
             }
@@ -265,7 +266,7 @@ const createTimeline = () => {
         const onEnter = () => {
           if (!hasPointerMovedSinceInit) return;
           if (!cardParent.classList.contains("is-placed")) return;
-          if (st && Math.abs(st.getVelocity()) > 100) return;
+          if (st && Math.abs(st.getVelocity()) > 180) return;
 
           hoveredCardParent = cardParent;
 
@@ -347,7 +348,7 @@ const createTimeline = () => {
           absolute: true,
           scale: true,
           simple: true,
-          ease: "power3.in",
+          ease: "power3.inOut",
           immediateRender: false,
         }),
         mainTl.labels.final + i * 0.1 + 0.2,
@@ -355,7 +356,7 @@ const createTimeline = () => {
 
       mainTl.to(
         card,
-        { transformOrigin: "center", rotation: targetRotation, duration: 0.4, ease: "power3.in" },
+        { transformOrigin: "center", rotation: targetRotation, duration: 0.4, ease: "power3.inOut" },
         mainTl.labels.final + i * 0.1 + 0.2,
       );
     });
@@ -363,15 +364,22 @@ const createTimeline = () => {
     // ========== CUSTOM SNAP (bypasses Lenis inertia) ==========
     // Listens to raw user-input events (wheel / touch) so the idle timer
     // starts when the *user* stops, not when Lenis's smooth inertia settles.
-    const SNAP_IDLE_DELAY = 600;        // ms after last input before snapping
+    const SNAP_IDLE_DELAY = 300;        // ms after last input before snapping
     const SNAP_COMMIT_THRESHOLD = 0.3;  // zone % to commit forward (below = revert)
-    const SNAP_SCROLL_DURATION = 1.2;   // seconds for the snap scroll animation
+    const SNAP_SCROLL_DURATION = 1.5;   // seconds for the snap scroll animation
     const SNAP_REVERT_THRESHOLD_OUT = 0.5;  // zone % to revert to placed state
+    const SNAP_MIN_LENIS_VELOCITY = 0.03;   // wait until inertia is mostly settled
+    const SNAP_RETRY_DELAY = 120;           // retry interval while inertia is active
 
     const st = mainTl.scrollTrigger;
     let _snapTimer = null;
     let _lastPointerX = 0;
     let _lastPointerY = 0;
+    let _isSnapping = false;
+    let _snapUnlockTimer = null;
+    let _lastWheelAt = 0;
+    let _lastTouchAt = 0;
+    const SNAP_SCROLL_SOURCE_GAP = 420;
 
     const onPointerMove = (e) => {
       _lastPointerX = e.clientX;
@@ -393,6 +401,7 @@ const createTimeline = () => {
       const dur = mainTl.duration();
       if (!dur || !st.isActive) return null;
       const progress = st.progress;
+      const direction = st.direction;
       const initialP = mainTl.labels.initial / dur;
       const finalP = mainTl.labels.final / dur;
 
@@ -406,7 +415,8 @@ const createTimeline = () => {
       // Card out zone: revert to placed state if < threshold
       if (progress > finalP + 0.01 && progress < 1 - 0.01) {
         const zone = (progress - finalP) / (1 - finalP);
-        if (zone < SNAP_REVERT_THRESHOLD_OUT) {
+        // Only apply this when moving down; otherwise upward scroll can feel "stuck" at final.
+        if (direction === 1 && zone < SNAP_REVERT_THRESHOLD_OUT) {
           return st.start + finalP * (st.end - st.start);
         }
       }
@@ -416,20 +426,35 @@ const createTimeline = () => {
 
     function attemptSnap() {
       _snapTimer = null;
+      if (typeof lenis !== "undefined" && Math.abs(lenis.velocity || 0) > SNAP_MIN_LENIS_VELOCITY) {
+        _snapTimer = setTimeout(attemptSnap, SNAP_RETRY_DELAY);
+        return;
+      }
       const target = getSnapTarget();
       if (target !== null && typeof lenis !== "undefined") {
+        _isSnapping = true;
+        clearTimeout(_snapUnlockTimer);
+        _snapUnlockTimer = setTimeout(() => {
+          _isSnapping = false;
+        }, SNAP_SCROLL_DURATION * 1000 + 250);
         lenis.scrollTo(target, {
           duration: SNAP_SCROLL_DURATION,
           easing: (t) =>
             t < 0.5
               ? 2 * t * t
               : 1 - Math.pow(-2 * t + 2, 2) / 2,
-          onComplete: retriggerHoverUnderCursor,
+          onComplete: () => {
+            clearTimeout(_snapUnlockTimer);
+            _snapUnlockTimer = null;
+            _isSnapping = false;
+            retriggerHoverUnderCursor();
+          },
         });
       }
     }
 
     function scheduleSnap() {
+      if (_isSnapping) return;
       clearTimeout(_snapTimer);
       _snapTimer = setTimeout(attemptSnap, SNAP_IDLE_DELAY);
     }
@@ -437,19 +462,84 @@ const createTimeline = () => {
     function cancelSnap() {
       clearTimeout(_snapTimer);
       _snapTimer = null;
+      clearTimeout(_snapUnlockTimer);
+      _snapUnlockTimer = null;
+      _isSnapping = false;
     }
 
-    window.addEventListener("wheel", scheduleSnap, { passive: true });
-    window.addEventListener("touchend", scheduleSnap, { passive: true });
-    window.addEventListener("touchstart", cancelSnap, { passive: true });
+    let snapObserver = null;
+    const fallbackOnWheel = () => {
+      _lastWheelAt = performance.now();
+      scheduleSnap();
+    };
+    const fallbackOnScroll = () => {
+      const now = performance.now();
+      if (now - _lastWheelAt < SNAP_SCROLL_SOURCE_GAP) return;
+      if (now - _lastTouchAt < SNAP_SCROLL_SOURCE_GAP) return;
+      scheduleSnap();
+    };
+    const fallbackOnTouchEnd = () => {
+      _lastTouchAt = performance.now();
+      scheduleSnap();
+    };
+    const fallbackOnTouchStart = () => {
+      _lastTouchAt = performance.now();
+      cancelSnap();
+    };
+    if (typeof Observer !== "undefined") {
+      snapObserver = Observer.create({
+        target: window,
+        type: "wheel,touch,scroll",
+        preventDefault: false,
+        onChange: (self) => {
+          const eventType = self.event && self.event.type;
+          const now = performance.now();
+
+          if (eventType === "wheel") {
+            _lastWheelAt = now;
+            scheduleSnap();
+            return;
+          }
+
+          if (eventType === "touchstart") {
+            _lastTouchAt = now;
+            cancelSnap();
+            return;
+          }
+
+          if (eventType === "touchend" || eventType === "touchmove") {
+            _lastTouchAt = now;
+            scheduleSnap();
+            return;
+          }
+
+          if (eventType === "scroll") {
+            if (now - _lastWheelAt < SNAP_SCROLL_SOURCE_GAP) return;
+            if (now - _lastTouchAt < SNAP_SCROLL_SOURCE_GAP) return;
+            scheduleSnap();
+          }
+        },
+      });
+    } else {
+      window.addEventListener("wheel", fallbackOnWheel, { passive: true });
+      window.addEventListener("scroll", fallbackOnScroll, { passive: true });
+      window.addEventListener("touchend", fallbackOnTouchEnd, { passive: true });
+      window.addEventListener("touchstart", fallbackOnTouchStart, { passive: true });
+    }
 
     const _prevCleanup = _scrollListenerCleanup;
     _scrollListenerCleanup = () => {
       if (_prevCleanup) _prevCleanup();
       cancelSnap();
-      window.removeEventListener("wheel", scheduleSnap);
-      window.removeEventListener("touchend", scheduleSnap);
-      window.removeEventListener("touchstart", cancelSnap);
+      if (snapObserver) {
+        snapObserver.kill();
+        snapObserver = null;
+      } else {
+        window.removeEventListener("wheel", fallbackOnWheel);
+        window.removeEventListener("scroll", fallbackOnScroll);
+        window.removeEventListener("touchend", fallbackOnTouchEnd);
+        window.removeEventListener("touchstart", fallbackOnTouchStart);
+      }
       window.removeEventListener("pointermove", onPointerMove);
     };
   });

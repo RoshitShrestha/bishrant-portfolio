@@ -1,348 +1,534 @@
-// gsap.registerPlugin(MorphSVGPlugin);
+// ============================================================================
+//  ADAPTIVE CURSOR
+//  --------------------------------------------------------------------------
+//  Sections in order:
+//    1. CONFIG           — knobs a developer would want to tune
+//    2. MODE_PRESETS     — target values for each visual mode
+//    3. DOM refs         — cached element references
+//    4. State            — animated values, velocities, event state
+//    5. Mode detection   — what the mouse is hovering, which mode applies
+//    6. Event handlers   — mousemove, mousedown, mouseup
+//    7. Animation loop   — hot path, optimized, driven by gsap.ticker
+// ============================================================================
+//
+//  Requires: GSAP 3.x loaded globally before this script runs.
+// ============================================================================
 
-// ── Element refs ─────────────────────────────────────────────────────
-const NS = 'http://www.w3.org/2000/svg';
-const cursorEl = document.getElementById('customCursor');
-const cursorSvg = document.getElementById('cursorSvg');
-const oS = document.getElementById('outerShape');
-const iS = document.getElementById('innerShape');
-const dot = document.getElementById('centerDot');
-const blurD = document.getElementById('blurDisc');
-const sTop = document.getElementById('serifTop');
-const sBot = document.getElementById('serifBot');
-const hz = document.getElementById('outerHaze');
-const pRipple = document.getElementById('pressRipple');
-const pFlash = document.getElementById('pressFlash');
-const outerGrad = document.getElementById('ringGrad');
-const ringGroup = document.getElementById('ringGroup');
-const jitterGroup = document.getElementById('jitterGroup');
 
-// ── MorphSVG shape library ───────────────────────────────────────────
-// All paths share the same 4-arc topology → no point-count mismatch.
-const SHAPES = {
-    outer: {
-        default: 'M40,26 C47.732,26 54,32.268 54,40 C54,47.732 47.732,54 40,54 C32.268,54 26,47.732 26,40 C26,32.268 32.268,26 40,26 Z',
-        text: 'M40,22 C40.276,22 40.5,30.059 40.5,40 C40.5,49.941 40.276,58 40,58 C39.724,58 39.5,49.941 39.5,40 C39.5,30.059 39.724,22 40,22 Z',
-        button: 'M40,22 C49.941,22 58,30.059 58,40 C58,49.941 49.941,58 40,58 C30.059,58 22,49.941 22,40 C22,30.059 30.059,22 40,22 Z',
+// ============================================================================
+//  1. CONFIG
+// ============================================================================
+const CONFIG = {
+    // CSS selectors that decide which mode each element triggers. Extend as needed.
+    // Use descendant combinators (e.g. 'p span') to match by ancestor.
+    triggers: {
+        text:   'h1, h1 *, h2, h2 div, p, p span, p em, p strong',  // text-mode for inline children of <p>
+        button: 'button, a.spec-btn',                         // add ', a' to include links
     },
-    inner: {
-        default: 'M40,31 C44.971,31 49,35.029 49,40 C49,44.971 44.971,49 40,49 C35.029,49 31,44.971 31,40 C31,35.029 35.029,31 40,31 Z',
-        text: 'M40,39.9 C40.055,39.9 40.1,39.945 40.1,40 C40.1,40.055 40.055,40.1 40,40.1 C39.945,40.1 39.9,40.055 39.9,40 C39.9,39.945 39.945,39.9 40,39.9 Z',
-        button: 'M40,28 C46.627,28 52,33.373 52,40 C52,46.627 46.627,52 40,52 C33.373,52 28,46.627 28,40 C28,33.373 33.373,28 40,28 Z',
+    // Spring physics: [stiffness, damping]. Higher stiffness = snappier.
+    springs: {
+        inner: [175, 23],             // SVG cursor morphs
+        outer: [190, 24],             // CSS div that wraps buttons
+        press: [120, 18],             // click-and-hold squeeze
+    },
+    button: {
+        padding: 5,                   // pixels around the wrapped button
+        borderAlpha: 0.85,            // wrap-ring border opacity
+    },
+    press: {
+        maxHoldFrames: 120,           // ~2s at 60fps to reach full charge
+        dustThreshold: 0.3,           // releases below this emit no dust
+        dustMax: 10,
+    },
+    idleFrames: 300,                  // ~5s still before idle breathing kicks in
+    hoverPulseStrength: 2.2,
+};
+
+
+// ============================================================================
+//  2. MODE_PRESETS
+//  All inner properties listed per mode so springs always have a target.
+//  Add a new mode by copying default, editing values, adding a case in detectMode().
+// ============================================================================
+const MODE_PRESETS = {
+    // Default — outer ring + inner ring + filled white core
+    default: {
+        haze: 0,
+        oOp: 1,         // outer stroke opacity
+        iOp: 1,         // inner stroke opacity
+        iFillOp: 1,     // inner FILLED disc opacity (NEW — solid mass for visibility)
+        dot: 0,         // standalone center dot (only used in some modes)
+        rx: 11, ry: 11,         // outer ellipse radii
+        irx: 7, iry: 7,         // inner ring radii
+        iFillR: 3.5,            // inner filled disc radius
+        oS: 1.0, iS: 1.0,       // stroke alphas (now full white)
+        oSW: 1.1, iSW: 0.9,     // stroke widths
+        dotR: 0,
+        serifOp: 0, serifW: 0, serifSpan: 0,
+        coreR: 11,              // baseline radius for ripple + dust
+    },
+    // Text — vertical stem with I-beam serifs. Inner hidden.
+    text: {
+        haze: 0.12,
+        oOp: 1, iOp: 0, iFillOp: 0, dot: 0,
+        rx: 0.35, ry: 16,
+        irx: 0, iry: 0,
+        iFillR: 0,
+        oS: 1.0, iS: 0,
+        oSW: 1.4, iSW: 0,
+        dotR: 0,
+        serifOp: 1, serifW: 3, serifSpan: 16,
+        coreR: 8,
+    },
+    // Button — SVG outer hides (CSS div takes over), inner becomes precision dot
+    button: {
+        haze: 0.25,
+        oOp: 0,
+        iOp: 1, iFillOp: 1, dot: 1,
+        rx: 11, ry: 11,
+        irx: 4, iry: 4,
+        iFillR: 2,                  // smaller filled core
+        oS: 1.0, iS: 1.0,
+        oSW: 1.1, iSW: 1.0,
+        dotR: 1.5,
+        serifOp: 0, serifW: 0, serifSpan: 0,
+        coreR: 8,
     },
 };
 
-// ── Mode config (non-shape properties only) ──────────────────────────
-const MODES = {
-    default: { haze: 0, outerOp: 1, innerOp: 1, dotOp: 1, svgW: 80, svgH: 80, bR: 14, bO: 1, dotR: 1.5, serifOp: 0 },
-    text: { haze: 0.15, outerOp: 1, innerOp: 0, dotOp: 0, svgW: 80, svgH: 80, bR: 1, bO: 0, dotR: 0, serifOp: 1 },
-    button: { haze: 0.4, outerOp: 1, innerOp: 1, dotOp: 1, svgW: 100, svgH: 100, bR: 18, bO: 1, dotR: 2, serifOp: 0 },
-};
 
-// Proxy object GSAP tweens for smooth scalar transitions
-const anim = { ...MODES.default };
+// ============================================================================
+//  3. DOM REFS
+// ============================================================================
+const outer    = document.getElementById('cursorOuter');
+const cur      = document.getElementById('customCursor');
+const oS       = document.getElementById('outerShape');
+const iS       = document.getElementById('innerShape');
+const iFill    = document.getElementById('innerFill');
+const dot      = document.getElementById('centerDot');
+const sTop     = document.getElementById('serifTop');
+const sBot     = document.getElementById('serifBot');
+const hz       = document.getElementById('outerHaze');
+const pRipple  = document.getElementById('pressRipple');
+const pFlash   = document.getElementById('pressFlash');
+const segs     = [0,1,2,3,4,5].map(i => document.getElementById('s' + i));
+// Direct style refs (saves a property lookup per write in the hot loop)
+const outerStyle = outer.style;
+const oSStyle    = oS.style;
+const iFillStyle = iFill.style;
+// Cursor element position is written via gsap.quickSetter — see section 4.
 
-// ── quickSetters ─────────────────────────────────────────────────────
-const setLeft = gsap.quickSetter(cursorEl, 'left', 'px');
-const setTop = gsap.quickSetter(cursorEl, 'top', 'px');
 
-// ── State ────────────────────────────────────────────────────────────
+// ============================================================================
+//  4. STATE
+// ============================================================================
+let mx = innerWidth / 2, my = innerHeight / 2;
+let px = mx, py = my;
+
 let mode = 'default';
-let mx = 0, my = 0, px = mx, py = my;
-let pressed = false, holdDuration = 0, releaseCharge = 0;
-const MAX_HOLD = 120; // frames ≈ 2 s at 60 fps
+let btnEl = null;
+let btnRadius = 12;
+let firstMove = true;
 
-// Press spring — drives squeeze & brightness in the ticker
-let pressVal = 0, pressVel = 0;
+// Idle breathing
+let idleT = 0;
+let idleAmp = 0, idleTargetAmp = 0, idlePhase = 0;
 
-// Vibration — builds during hold
-let vibrateAmp = 0, vibratePhase = 0;
+// Press / hold
+let pressed = false;
+let pressTarget = 0, pressVal = 0, pressVel = 0;
+let rippleT = -1;
+let holdDuration = 0;
+let releaseCharge = 0;
+let vibratePhase = 0, vibrateAmp = 0;
 
-// Idle breathing — kicks in after IDLE_FRAMES of stillness
-let idleFrames = 0, idleAmp = 0, idleTargetAmp = 0, idlePhase = 0;
-const IDLE_FRAMES = 300;
+// Hover-enter pulse
+let hoverPulseT = -1;
 
-// Directional segments
-const segOp = new Float32Array(6);
-const segTg = new Float32Array(6);
+// Inner SVG animated state
+const TGT = { ...MODE_PRESETS.default };
+const CUR = { ...TGT };
+const VEL = {};
+for (const k in CUR) VEL[k] = 0;
+const CUR_KEYS = Object.keys(CUR);
+const CUR_KEYS_LEN = CUR_KEYS.length;
 
-// Rotating gradient angle
-let gradAngle = 0;
+// Outer CSS-div animated state
+const OUTER_TGT = { x: -9999, y: -9999, w: 22, h: 22, br: 11, op: 0 };
+const OUTER_CUR = { ...OUTER_TGT };
+const OUTER_VEL = { x: 0, y: 0, w: 0, h: 0, br: 0, op: 0 };
+const OUTER_KEYS = Object.keys(OUTER_CUR);
+const OUTER_KEYS_LEN = OUTER_KEYS.length;
 
-// Active mode tween reference
-let modeTween = null;
+// Direction segments
+const N = 6;
+const sg = new Float64Array(N);
+const tg = new Float64Array(N);
 
-// ── Generate directional segment arcs ────────────────────────────────
-const segPts = [
-    [40, 26, 52.12, 32], [52.12, 32, 52.12, 48], [52.12, 48, 40, 54],
-    [40, 54, 27.88, 48], [27.88, 48, 27.88, 32], [27.88, 32, 40, 26],
-];
-const segs = segPts.map(([x1, y1, x2, y2]) => {
-    const p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', `M${x1} ${y1} A14 14 0 0 1 ${x2} ${y2}`);
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke', 'url(#segGrad)');
-    p.setAttribute('stroke-width', '1');
-    p.style.opacity = 0;
-    document.getElementById('dirSegs').appendChild(p);
-    return p;
-});
-
-// ── Generate dust circles ─────────────────────────────────────────────
-const dustEls = Array.from({ length: 10 }, () => {
-    const c = document.createElementNS(NS, 'circle');
-    c.setAttribute('cx', '40'); c.setAttribute('cy', '40'); c.setAttribute('r', '1');
-    c.setAttribute('fill', 'rgba(160,175,255,0.7)');
-    c.setAttribute('filter', 'url(#glow)');
-    c.style.opacity = 0;
-    document.getElementById('dustGroup').appendChild(c);
-    return c;
-});
-
-// ── Mode switching ────────────────────────────────────────────────────
-function switchMode(newMode) {
-    if (mode === newMode) return;
-    mode = newMode;
-    if (modeTween) modeTween.kill();
-
-    modeTween = gsap.timeline();
-
-    // Scalar properties via proxy
-    modeTween.to(anim, { duration: 0.45, ease: 'power3.out', ...MODES[newMode] }, 0);
-
-    // Shape morph via MorphSVG
-    modeTween.to(oS, {
-        duration: 0.45, ease: 'power3.out',
-        morphSVG: { shape: SHAPES.outer[newMode], type: 'rotational' },
-    }, 0);
-    modeTween.to(iS, {
-        duration: 0.4, ease: 'power3.out',
-        morphSVG: { shape: SHAPES.inner[newMode], type: 'rotational' },
-    }, 0);
-
-    // SVG canvas size
-    gsap.to(cursorSvg, { duration: 0.3, ease: 'power2.out', width: MODES[newMode].svgW, height: MODES[newMode].svgH });
+// Dust particles
+const dustEls = [];
+const dustParticles = [];
+for (let i = 0; i < CONFIG.press.dustMax; i++) {
+    dustEls.push(document.getElementById('dust' + i));
+    dustParticles.push({ active: false, t: 0, angle: 0, speed: 0, startR: 0, drift: 0 });
 }
 
-// ── Mouse ─────────────────────────────────────────────────────────────
-/* document.addEventListener('mousemove', e => {
+const DT = 1 / 60;
+const [K_IN, D_IN]   = CONFIG.springs.inner;
+const [K_OUT, D_OUT] = CONFIG.springs.outer;
+const [K_PR, D_PR]   = CONFIG.springs.press;
+
+// gsap.utils — reusable clamp/normalize functions (function-form is the recommended
+// pattern when the same range is hit many times per frame; avoids re-parsing args).
+const clamp01      = gsap.utils.clamp(0, 1);
+const normHold     = gsap.utils.normalize(0, CONFIG.press.maxHoldFrames);
+
+// gsap.quickSetter — caches the property writer for the cursor element. The cursor
+// pins to the raw mouse position every frame, so this is the hottest write in the loop.
+const setCurLeft = gsap.quickSetter(cur, 'left', 'px');
+const setCurTop  = gsap.quickSetter(cur, 'top',  'px');
+
+
+// ============================================================================
+//  5. MODE DETECTION & APPLICATION
+// ============================================================================
+function detectMode(el) {
+    if (!el || el.nodeType !== 1) return 'default';
+    if (el.matches(CONFIG.triggers.text))   return 'text';
+    if (el.matches(CONFIG.triggers.button)) return 'button';
+    return 'default';
+}
+
+function applyInnerMode(name) {
+    const p = MODE_PRESETS[name];
+    for (let i = 0; i < CUR_KEYS_LEN; i++) {
+        const k = CUR_KEYS[i];
+        TGT[k] = p[k];
+    }
+}
+
+function wrapOuterAround(el) {
+    const r = el.getBoundingClientRect();
+    const pad = CONFIG.button.padding;
+    OUTER_TGT.x  = r.left + r.width / 2;
+    OUTER_TGT.y  = r.top  + r.height / 2;
+    OUTER_TGT.w  = r.width  + pad * 2;
+    OUTER_TGT.h  = r.height + pad * 2;
+    OUTER_TGT.br = Math.min(btnRadius + pad, Math.min(OUTER_TGT.w, OUTER_TGT.h) / 2);
+    OUTER_TGT.op = CONFIG.button.borderAlpha;
+}
+
+function parkOuterAtMouse() {
+    OUTER_TGT.x = mx; OUTER_TGT.y = my;
+    OUTER_TGT.w = 22; OUTER_TGT.h = 22;
+    OUTER_TGT.br = 11; OUTER_TGT.op = 0;
+}
+
+
+// ============================================================================
+//  6. EVENT HANDLERS
+// ============================================================================
+document.addEventListener('mousemove', (e) => {
     mx = e.clientX; my = e.clientY;
-    idleFrames = 0; idleTargetAmp = 0;
-    cursorEl.style.display = 'none';
+    idleT = 0; idleTargetAmp = 0;
+
+    if (firstMove) { OUTER_CUR.x = mx; OUTER_CUR.y = my; firstMove = false; }
+
     const el = document.elementFromPoint(mx, my);
-    cursorEl.style.display = '';
-    const tag = el ? el.tagName : '';
-    if (tag === 'P' || tag === 'H2') switchMode('text');
-    else if (tag === 'BUTTON') switchMode('button');
-    else switchMode('default');
-}); */
-document.addEventListener('mousemove', e => {
-    mx = e.clientX;
-    my = e.clientY;
-    idleFrames = 0;
-    idleTargetAmp = 0;
+    const newMode = detectMode(el);
 
-    cursorEl.style.display = 'none';
-    const el = document.elementFromPoint(mx, my);
-    cursorEl.style.display = '';
+    if (newMode !== mode) {
+        mode = newMode;
+        applyInnerMode(newMode);
+        hoverPulseT = 0;
+        if (newMode !== 'button') btnEl = null;
+    }
 
-    // Find nearest ancestor (including itself) with data-cursor-type
-    const cursorTarget = el?.closest('[data-cursor-type]');
-    const cursorType = cursorTarget?.dataset.cursorType;
-
-    if (cursorType === 'text') {
-        switchMode('text');
-    } else if (cursorType === 'button') {
-        switchMode('button');
+    if (newMode === 'button') {
+        if (btnEl !== el) {
+            btnEl = el;
+            // Read border-radius once per button entry (style recalc is expensive)
+            btnRadius = parseFloat(getComputedStyle(el).borderRadius) || 12;
+        }
+        wrapOuterAround(el);
     } else {
-        switchMode('default');
+        parkOuterAtMouse();
     }
 });
 
-// ── Press / Release ───────────────────────────────────────────────────
 document.addEventListener('mousedown', () => {
-    pressed = true;
-    holdDuration = 0;
-    // Flash in immediately on click
-    gsap.fromTo(pFlash, { opacity: 0 }, { opacity: 0.35, duration: 0.08, ease: 'power2.out' });
+    pressed = true; pressTarget = 1;
+    rippleT = -1; holdDuration = 0;
 });
-
 document.addEventListener('mouseup', () => {
-    releaseCharge = Math.min(holdDuration / MAX_HOLD + vibrateAmp * 0.4, 1);
-    pressed = false;
+    const baseCharge = clamp01(normHold(holdDuration));
+    releaseCharge = clamp01(baseCharge + vibrateAmp * 0.4);
+    pressed = false; pressTarget = 0;
+    rippleT = 0;
+    if (releaseCharge > CONFIG.press.dustThreshold) emitDust(releaseCharge);
     holdDuration = 0;
-
-    // Ripple expands and fades — radius and duration scale with charge
-    gsap.fromTo(pRipple,
-        {
-            attr: { r: 16 }, opacity: 0.5 + releaseCharge * 0.5,
-            'stroke-width': 1.2 + releaseCharge * 1.8
-        },
-        {
-            attr: { r: 14 + 14 + releaseCharge * 36 }, opacity: 0,
-            'stroke-width': 0.3,
-            duration: 0.55 + releaseCharge * 0.35, ease: 'power3.out'
-        }
-    );
-
-    // Flash out
-    gsap.to(pFlash, { opacity: 0, duration: 0.25, ease: 'power2.out' });
-
-    if (releaseCharge > 0.3) emitDust(releaseCharge);
 });
 
-// ── Dust burst ────────────────────────────────────────────────────────
 function emitDust(charge) {
-    const count = charge > 0.7 ? 10 : Math.max(3, Math.floor(10 * charge));
-    for (let i = 0; i < 10; i++) {
-        const el = dustEls[i];
-        if (i >= count) { gsap.set(el, { opacity: 0 }); continue; }
-        const angle = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.9;
-        const speed = (20 + Math.random() * 25) * (0.5 + charge * 0.5);
-        const startR = 0.3 + Math.random() * 0.4 + charge * 0.3;
-        const dur = 0.7 + Math.random() * 0.4;
-        gsap.timeline()
-            .set(el, { attr: { cx: 40, cy: 40, r: startR }, opacity: 0 })
-            .to(el, {
-                attr: {
-                    cx: 40 + Math.cos(angle) * speed,
-                    cy: 40 + Math.sin(angle) * speed,
-                    r: Math.max(0.15, startR * 0.5)
-                },
-                opacity: 0.75, duration: dur * 0.15, ease: 'power2.out'
-            })
-            .to(el, { opacity: 0, duration: dur * 0.85, ease: 'power2.in' }, '<+=0.05')
-            .set(el, { attr: { cx: 40, cy: 40 } });
+    const max = CONFIG.press.dustMax;
+    const count = charge > 0.7 ? max : Math.max(3, Math.floor(max * charge));
+    const step = (Math.PI * 2) / count;
+    for (let i = 0; i < max; i++) {
+        const p = dustParticles[i];
+        if (i >= count) { p.active = false; continue; }
+        p.active = true;
+        p.t      = 0;
+        p.angle  = step * i + (Math.random() - 0.5) * 0.9;
+        p.speed  = (16 + Math.random() * 22) * (0.5 + charge * 0.5);
+        p.startR = 0.25 + Math.random() * 0.35 + charge * 0.3;
+        p.drift  = (Math.random() - 0.5) * 0.015;
     }
 }
 
-// ── Ticker ────────────────────────────────────────────────────────────
-// Spring constants for press squeeze
-const PRESS_STIFF = 120, PRESS_DAMP = 18, DT = 1 / 60;
 
-gsap.ticker.add(() => {
-    // ── 1. Position ──
-    setLeft(mx); setTop(my);
+// ============================================================================
+//  7. ANIMATION LOOP  (driven by gsap.ticker — see bottom of file)
+// ============================================================================
+function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
 
-    // ── 2. Velocity ──
+function dirSeg(vx, vy) {
+    const a = (Math.atan2(vy, vx) + Math.PI/2 + Math.PI*2) % (Math.PI*2);
+    return Math.floor((a / (Math.PI*2)) * N) % N;
+}
+
+function animate() {
+    // ---- Position & velocity ----
+    setCurLeft(mx);
+    setCurTop(my);
     const vx = mx - px, vy = my - py;
     const spd = Math.sqrt(vx * vx + vy * vy);
     px = mx; py = my;
 
-    // ── 3. Idle breathing ──
-    if (spd < 0.1) { idleFrames++; if (idleFrames >= IDLE_FRAMES) idleTargetAmp = 1; }
-    else { idleFrames = 0; idleTargetAmp = 0; }
+    // ---- Idle breathing ----
+    if (spd < 0.1) { idleT++; if (idleT >= CONFIG.idleFrames) idleTargetAmp = 1; }
+    else { idleT = 0; idleTargetAmp = 0; }
     idleAmp += (idleTargetAmp - idleAmp) * 0.02;
     idlePhase += 0.025;
-    const sinV = Math.sin(idlePhase) * 0.5 + 0.5; // 0..1
+    const sinV = Math.sin(idlePhase) * 0.5 + 0.5;
+    const pso = sinV * 1.2 * idleAmp;
+    const psi = sinV * 0.8 * idleAmp;
+    const po  = sinV * 0.1 * idleAmp;
 
-    // ── 4. Press spring ──
-    // Drives squeeze (scale), brightness boost, and flash opacity.
-    const pressTarget = pressed ? 1 : 0;
-    const acc = (pressTarget - pressVal) * PRESS_STIFF - pressVel * PRESS_DAMP;
-    pressVel += acc * DT;
-    pressVal += pressVel * DT;
-    const sqz = Math.max(0, Math.min(1, pressVal)); // 0..1
+    // ---- Press spring (inlined) ----
+    {
+        const acc = (pressTarget - pressVal) * K_PR - pressVel * D_PR;
+        pressVel += acc * DT;
+        pressVal += pressVel * DT;
+    }
 
-    // ── 5. Hold charge & vibration ──
+    // ---- Hover-enter pulse ----
+    let hoverPulseAdd = 0;
+    if (hoverPulseT >= 0 && hoverPulseT <= 1) {
+        hoverPulseT += 0.055;
+        hoverPulseAdd = (1 - easeOutQuart(clamp01(hoverPulseT))) * CONFIG.hoverPulseStrength;
+        if (hoverPulseT > 1) hoverPulseT = -1;
+    }
+
+    // ---- Press hold charge & vibration ----
     if (pressed) holdDuration++;
-    const holdNorm = Math.min(holdDuration / MAX_HOLD, 1);
-    const holdEased = holdNorm * holdNorm * (3 - 2 * holdNorm); // smoothstep
-
-    vibrateAmp += ((pressed ? holdNorm * holdNorm * holdNorm : 0) - vibrateAmp) * 0.025;
+    const holdNorm  = clamp01(normHold(holdDuration));
+    const holdEased = holdNorm * holdNorm * (3 - 2 * holdNorm);
+    const vibrateTarget = pressed ? holdNorm * holdNorm * holdNorm : 0;
+    vibrateAmp += (vibrateTarget - vibrateAmp) * 0.025;
     vibratePhase += 0.06 + vibrateAmp * 0.04;
-
     const vib1 = Math.sin(vibratePhase);
     const vib2 = Math.sin(vibratePhase * 1.7 + 0.8);
     const vib3 = Math.sin(vibratePhase * 0.6 + 2.1);
+    const vibJitterX    = (vib1 * 0.5 + vib2 * 0.3) * vibrateAmp * 0.7;
+    const vibJitterY    = (vib2 * 0.5 - vib1 * 0.3) * vibrateAmp * 0.7;
+    const vibBulgeOuter = (vib3 * 0.5 + vib1 * 0.3) * vibrateAmp * 1.8;
+    const vibBulgeInner = (vib3 * 0.4 + vib2 * 0.2) * vibrateAmp * 1.2;
+    const vibStrokePulse = (vib1 * 0.5 + 0.5) * vibrateAmp * 0.12;
 
-    // Positional jitter (applied to jitterGroup)
-    const vibJX = (vib1 * 0.5 + vib2 * 0.3) * vibrateAmp * 0.7;
-    const vibJY = (vib2 * 0.5 - vib1 * 0.3) * vibrateAmp * 0.7;
-
-    // Ring bulge: adds to scale of jitterGroup so MorphSVG shape + bulge coexist
-    const vibBulge = (vib3 * 0.5 + vib1 * 0.3) * vibrateAmp * 0.04;
-
-    // Brightness boost during squeeze and hold charge
-    const squeezeBright = sqz * (0.25 + holdEased * 0.2) + (vib1 * 0.5 + 0.5) * vibrateAmp * 0.12;
-
-    // ── 6. Rotate outer ring gradient ──
-    gradAngle += 0.008;
-    const gc = Math.cos(gradAngle) * 14, gs = Math.sin(gradAngle) * 14;
-    outerGrad.setAttribute('x1', 40 - gc); outerGrad.setAttribute('y1', 40 - gs);
-    outerGrad.setAttribute('x2', 40 + gc); outerGrad.setAttribute('y2', 40 + gs);
-
-    // ── 7. ringGroup: press squeeze scale (spring-driven) ──
-    // squeezeFactor < 1 during press, elastic overshoot handled by spring itself.
+    // ---- Press-derived modulation ----
+    const sqz = clamp01(pressVal);
     const squeezeFactor = 1 - sqz * (0.15 + holdEased * 0.15);
-    gsap.set(ringGroup, { scaleX: squeezeFactor, scaleY: squeezeFactor, svgOrigin: '40 40' });
+    const squeezeBright = sqz * (0.25 + holdEased * 0.2) + vibStrokePulse;
+    const squeezeFlash  = sqz * (0.3 + holdEased * 0.25);
+    const dotScale      = 1 + sqz * (0.8 + holdEased * 0.6);
 
-    // ── 8. jitterGroup: vibration jitter + idle breath + ring bulge ──
-    const jScale = 1 + sinV * 0.03 * idleAmp + vibBulge;
-    gsap.set(jitterGroup, { x: vibJX, y: vibJY, scaleX: jScale, scaleY: jScale, svgOrigin: '40 40' });
-
-    // ── 9. Stroke brightness (squeezeBright boosts stroke opacity on press) ──
-    oS.setAttribute('stroke', `rgba(138,158,255,${Math.min(1, 0.22 + squeezeBright).toFixed(3)})`);
-    iS.setAttribute('stroke', `rgba(138,158,255,${Math.min(1, 0.35 + squeezeBright).toFixed(3)})`);
-    oS.style.opacity = anim.outerOp;
-    iS.style.opacity = anim.innerOp;
-
-    // ── 10. Flash pulse during hold charge ──
-    if (pressed) {
-        const flashOp = sqz * (0.3 + holdEased * 0.25);
-        gsap.set(pFlash, { opacity: Math.max(gsap.getProperty(pFlash, 'opacity'), flashOp) });
+    // ---- Ripple progression ----
+    let rR = 0, rO = 0, fO = 0;
+    if (rippleT >= 0 && rippleT <= 1) {
+        rippleT += 0.025 - releaseCharge * 0.015;
+        const re = easeOutQuart(clamp01(rippleT));
+        rR = CUR.coreR + re * (12 + releaseCharge * 32);
+        rO = (1 - re) * (0.5 + releaseCharge * 0.5);
+        fO = Math.max(0, (1 - rippleT * (1.8 - releaseCharge))) * (0.35 + releaseCharge * 0.4);
+        if (rippleT > 1) rippleT = -1;
     }
 
-    // ── 11. Center dot ──
-    const dotR = Math.max(0, anim.dotR * (1 + sqz * 0.8 + holdEased * 0.6) + vibrateAmp * (vib1 * 0.5 + 0.5) * 0.8);
-    dot.setAttribute('cx', 40 + vibJX); dot.setAttribute('cy', 40 + vibJY);
-    dot.setAttribute('r', dotR.toFixed(3));
-    dot.style.opacity = anim.dotOp;
-
-    // ── 12. Blur disc ──
-    blurD.setAttribute('cx', 40 + vibJX); blurD.setAttribute('cy', 40 + vibJY);
-    blurD.setAttribute('r', Math.max(0, anim.bR + sinV * 1.5 * idleAmp));
-    blurD.style.opacity = anim.bO;
-
-    // ── 13. Serifs (I-beam crossbars) ──
-    // getBBox() ignores ancestor transforms so we can't use it when ringGroup/jitterGroup
-    // are scaled. Instead we derive positions by applying both scale factors to the
-    // known half-height of the text stem (18px from centre) ourselves.
-    if (anim.serifOp > 0.01) {
-        // Combined scale from ringGroup (squeeze) × jitterGroup (bulge/breath)
-        const totalScale = squeezeFactor * jScale;
-        // Text stem top/bottom are ±18 from centre in path coords (y=22 and y=58, centre=40)
-        const halfH = 18 * totalScale;
-        const cx = 40 + vibJX;
-        const ty = 40 + vibJY - halfH;
-        const by = 40 + vibJY + halfH;
-        const sw = 4 + vibrateAmp * vib2 * 0.8;
-        sTop.setAttribute('x1', cx - sw); sTop.setAttribute('x2', cx + sw);
-        sTop.setAttribute('y1', ty); sTop.setAttribute('y2', ty);
-        sBot.setAttribute('x1', cx - sw); sBot.setAttribute('x2', cx + sw);
-        sBot.setAttribute('y1', by); sBot.setAttribute('y2', by);
+    // ---- Spring step: INNER (inlined, indexed) ----
+    for (let i = 0; i < CUR_KEYS_LEN; i++) {
+        const k = CUR_KEYS[i];
+        const c = CUR[k], v = VEL[k];
+        const nv = v + ((TGT[k] - c) * K_IN - v * D_IN) * DT;
+        CUR[k] = c + nv * DT;
+        VEL[k] = nv;
     }
-    sTop.style.opacity = anim.serifOp;
-    sBot.style.opacity = anim.serifOp;
+    // ---- Spring step: OUTER ----
+    for (let i = 0; i < OUTER_KEYS_LEN; i++) {
+        const k = OUTER_KEYS[i];
+        const c = OUTER_CUR[k], v = OUTER_VEL[k];
+        const nv = v + ((OUTER_TGT[k] - c) * K_OUT - v * D_OUT) * DT;
+        OUTER_CUR[k] = c + nv * DT;
+        OUTER_VEL[k] = nv;
+    }
 
-    // ── 14. Haze + directional segments ──
-    if (spd > 0.5 && mode === 'default') {
-        hz.style.opacity = Math.min(spd / 15, 0.5) * 0.35;
-        const ai = Math.floor(((Math.atan2(-vy, -vx) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * 6) % 6;
-        segTg.fill(0);
-        segTg[ai] = Math.min(spd / 8, 1);
-        segTg[(ai + 5) % 6] = Math.min(spd / 12, 0.5);
-        segTg[(ai + 1) % 6] = Math.min(spd / 12, 0.5);
-        hz.setAttribute('cx', 40 + (-vx / spd) * 2);
-        hz.setAttribute('cy', 40 + (-vy / spd) * 2);
+    // ---- Render: CSS-div outer ----
+    const pressShrink = sqz * 2;
+    const ow = Math.max(0, OUTER_CUR.w - pressShrink);
+    const oh = Math.max(0, OUTER_CUR.h - pressShrink);
+    const outerOp = OUTER_CUR.op > 0 ? OUTER_CUR.op : 0;
+    outerStyle.width  = ow + 'px';
+    outerStyle.height = oh + 'px';
+    outerStyle.borderRadius = OUTER_CUR.br + 'px';
+    outerStyle.transform    = `translate3d(${(OUTER_CUR.x - ow/2)|0}px, ${(OUTER_CUR.y - oh/2)|0}px, 0)`;
+    outerStyle.borderColor  = `rgba(255,255,255,${outerOp.toFixed(2)})`;
+    // Two-layer outline: solid 1px line + 3px soft falloff for visibility on bright surfaces
+    outerStyle.boxShadow =
+        `0 0 0 1px rgba(0,0,0,${(outerOp * 0.95).toFixed(2)}),` +
+        `0 0 4px rgba(0,0,0,${(outerOp * 0.5).toFixed(2)})`;
+
+    // ---- Render: SVG inner shapes ----
+    const vcx = 40 + vibJitterX;
+    const vcy = 40 + vibJitterY;
+
+    // Outer ring — gate writes when fully faded (button mode)
+    if (CUR.oOp > 0.005) {
+        const isText = mode === 'text';
+        const orx = Math.max(0, (CUR.rx + pso + hoverPulseAdd) * squeezeFactor + (isText ? 0 : vibBulgeOuter));
+        const ory = Math.max(0, (CUR.ry + pso + (isText ? 0 : hoverPulseAdd)) * squeezeFactor + vibBulgeOuter * 0.8);
+        oS.setAttribute('cx', vcx);
+        oS.setAttribute('cy', vcy);
+        oS.setAttribute('rx', orx);
+        oS.setAttribute('ry', ory);
+        oSStyle.opacity = CUR.oOp;
+        oS.setAttribute('stroke-width', CUR.oSW);
+        oS.setAttribute('stroke', `rgba(255,255,255,${Math.min(1, CUR.oS + squeezeBright).toFixed(2)})`);
     } else {
-        const hazeP = sinV * 0.12 * idleAmp;
-        hz.style.opacity = Math.max(hazeP, anim.haze);
-        segTg.fill(0);
-        hz.setAttribute('cx', 40); hz.setAttribute('cy', 40);
+        oSStyle.opacity = 0;
     }
-    for (let i = 0; i < 6; i++) {
-        segOp[i] += (segTg[i] - segOp[i]) * 0.15;
-        segs[i].style.opacity = segOp[i];
+
+    // Inner ring
+    const irx = Math.max(0, (CUR.irx + psi + hoverPulseAdd * 0.4) * squeezeFactor + vibBulgeInner);
+    const iry = Math.max(0, (CUR.iry + psi + hoverPulseAdd * 0.4) * squeezeFactor + vibBulgeInner * 0.8);
+    iS.setAttribute('cx', vcx);
+    iS.setAttribute('cy', vcy);
+    iS.setAttribute('rx', irx);
+    iS.setAttribute('ry', iry);
+    iS.style.opacity = CUR.iOp;
+    iS.setAttribute('stroke-width', CUR.iSW);
+    iS.setAttribute('stroke', `rgba(255,255,255,${Math.min(1, CUR.iS + squeezeBright).toFixed(2)})`);
+
+    // Inner FILLED disc — the solid mass that makes the cursor read on bright bg
+    if (CUR.iFillOp > 0.005 && CUR.iFillR > 0.05) {
+        const fillR = Math.max(0, CUR.iFillR * squeezeFactor + vibBulgeInner * 0.4);
+        iFill.setAttribute('cx', vcx);
+        iFill.setAttribute('cy', vcy);
+        iFill.setAttribute('r', fillR);
+        iFillStyle.opacity = CUR.iFillOp;
+    } else {
+        iFillStyle.opacity = 0;
     }
-});
+
+    // Standalone center dot (only used in button mode press, mostly)
+    if (CUR.dot > 0.005 && CUR.dotR > 0.05) {
+        const dotR = Math.max(0, CUR.dotR * dotScale + vibrateAmp * (vib1 * 0.5 + 0.5) * 0.8);
+        dot.setAttribute('cx', vcx);
+        dot.setAttribute('cy', vcy);
+        dot.setAttribute('r', dotR);
+        dot.style.opacity = CUR.dot;
+    } else {
+        dot.style.opacity = 0;
+    }
+
+    // Serifs
+    if (CUR.serifOp > 0.005 || CUR.serifSpan > 0.1) {
+        const span = CUR.serifSpan;
+        const sw = CUR.serifW + vibrateAmp * vib2 * 0.8;
+        const serifTopY = vcy - span, serifBotY = vcy + span;
+        sTop.setAttribute('x1', vcx - sw); sTop.setAttribute('x2', vcx + sw);
+        sTop.setAttribute('y1', serifTopY); sTop.setAttribute('y2', serifTopY);
+        sTop.style.opacity = CUR.serifOp;
+        sBot.setAttribute('x1', vcx - sw); sBot.setAttribute('x2', vcx + sw);
+        sBot.setAttribute('y1', serifBotY); sBot.setAttribute('y2', serifBotY);
+        sBot.style.opacity = CUR.serifOp;
+    } else {
+        sTop.style.opacity = 0;
+        sBot.style.opacity = 0;
+    }
+
+    // Press flash
+    pFlash.setAttribute('r', iry > 0 ? iry : 4);
+    pFlash.style.opacity = Math.max(squeezeFlash, fO);
+    if (fO > 0 && rippleT >= 0) {
+        pFlash.setAttribute('r', (iry > 0 ? iry : 4) + easeOutQuart(clamp01(rippleT)) * (3 + releaseCharge * 8));
+    }
+
+    // Press ripple
+    if (rippleT >= 0 || rO > 0.005) {
+        pRipple.setAttribute('r', rR);
+        pRipple.style.opacity = rO;
+        const baseStroke = 1 + releaseCharge * 1.6;
+        pRipple.setAttribute('stroke-width', (baseStroke * Math.max(0.1, 1 - easeOutQuart(clamp01(rippleT)))).toFixed(2));
+    } else {
+        pRipple.style.opacity = 0;
+    }
+
+    // Motion haze + directional segments (default mode only)
+    hz.style.opacity = po;
+    if (spd > 0.5 && mode === 'default') {
+        const ti = Math.min(spd / 15, 0.5);
+        hz.style.opacity = Math.max(po, ti * 0.35);
+        const ai = dirSeg(-vx, -vy);
+        tg.fill(0);
+        tg[ai]               = Math.min(spd / 8, 1);
+        tg[(ai - 1 + N) % N] = Math.min(spd / 12, 0.5);
+        tg[(ai + 1) % N]     = Math.min(spd / 12, 0.5);
+        const invSpd = 1 / spd;
+        hz.setAttribute('cx', 40 + (-vx * invSpd) * 2);
+        hz.setAttribute('cy', 40 + (-vy * invSpd) * 2);
+    } else if (idleAmp < 0.01) {
+        hz.style.opacity = CUR.haze;
+        tg.fill(0);
+        hz.setAttribute('cx', 40);
+        hz.setAttribute('cy', 40);
+    }
+    for (let i = 0; i < N; i++) {
+        sg[i] += (tg[i] - sg[i]) * 0.15;
+        segs[i].style.opacity = sg[i];
+    }
+
+    // Dust particles
+    for (let i = 0; i < CONFIG.press.dustMax; i++) {
+        const p = dustParticles[i];
+        const el = dustEls[i];
+        if (!p.active) { el.style.opacity = 0; continue; }
+        p.t += 0.008 + releaseCharge * 0.004;
+        p.angle += p.drift;
+        const progress = easeOutQuart(clamp01(p.t));
+        const dist = CUR.coreR + progress * p.speed;
+        const dx = Math.cos(p.angle) * dist;
+        const dy = Math.sin(p.angle) * dist;
+        const fadeIn  = clamp01(p.t / 0.08);
+        const fadeOut = Math.max(0, 1 - easeOutQuart(Math.max(0, (p.t - 0.1) / 0.9)));
+        const size = p.startR * (1 - progress * 0.5);
+        el.setAttribute('cx', 40 + dx);
+        el.setAttribute('cy', 40 + dy);
+        el.setAttribute('r', size < 0.15 ? 0.15 : size);
+        el.style.opacity = (fadeIn * fadeOut * 0.75).toFixed(2);
+        if (p.t >= 1) p.active = false;
+    }
+
+}
+
+// gsap.ticker — single batched render loop shared with every other GSAP animation
+// on the page. Avoids a separate rAF cycle and lets GSAP coordinate writes for us.
+// (The ticker calls animate with (time, deltaTime, frame, elapsed); extra args are ignored.)
+gsap.ticker.add(animate);
