@@ -54,6 +54,11 @@ const THEMES = {
   }
   
   const allInstances = [];
+  // Only instances that are actively hovered (or fading out after a leave) sit
+  // in this set. The shared ticker walks this small set instead of every
+  // SpecularButton on the page, which matters when there are 8+ instances and
+  // only one is being interacted with.
+  const activeInstances = new Set();
   
   /* ==========================================================================
      PILL GEOMETRY
@@ -70,9 +75,13 @@ const THEMES = {
      SCRATCH BUFFER
      ========================================================================== */
   class ScratchBuffer {
-    constructor(){this.canvas=document.createElement('canvas');this.ctx=this.canvas.getContext('2d');}
-    ensure(w,h,dpr){const pw=Math.ceil(w*dpr),ph=Math.ceil(h*dpr);if(this.canvas.width!==pw||this.canvas.height!==ph){this.canvas.width=pw;this.canvas.height=ph;}this.ctx.setTransform(dpr,0,0,dpr,0,0);this.ctx.clearRect(0,0,w,h);this.ctx.filter='none';return this.ctx;}
-    stampTo(target,blur,opacity,dx,dy,w,h,dpr){if(opacity<0.003)return;target.save();target.filter=`blur(${blur}px)`;target.globalAlpha=opacity;target.drawImage(this.canvas,0,0,Math.ceil(w*dpr),Math.ceil(h*dpr),dx,dy,w,h);target.restore();}
+    // The scratch buffer now remembers the DPR it was last ensure()'d at, so stamps
+    // pick the correct source rect without the caller threading the DPR through.
+    // This lets us render heavily-blurred glow layers at a lower DPR (the blur
+    // smooths out any pixelation) which is the single biggest canvas perf win.
+    constructor(){this.canvas=document.createElement('canvas');this.ctx=this.canvas.getContext('2d');this.dpr=1;}
+    ensure(w,h,dpr){this.dpr=dpr;const pw=Math.ceil(w*dpr),ph=Math.ceil(h*dpr);if(this.canvas.width!==pw||this.canvas.height!==ph){this.canvas.width=pw;this.canvas.height=ph;}this.ctx.setTransform(dpr,0,0,dpr,0,0);this.ctx.clearRect(0,0,w,h);this.ctx.filter='none';return this.ctx;}
+    stampTo(target,blur,opacity,dx,dy,w,h){if(opacity<0.003)return;target.save();if(blur>0)target.filter=`blur(${blur}px)`;target.globalAlpha=opacity;const sw=Math.ceil(w*this.dpr),sh=Math.ceil(h*this.dpr);target.drawImage(this.canvas,0,0,sw,sh,dx,dy,w,h);target.restore();}
   }
   const scratch=new ScratchBuffer(), scratchLarge=new ScratchBuffer();
   
@@ -81,7 +90,12 @@ const THEMES = {
      ========================================================================== */
   const LAYER_DEFS={background:{blur:55,opacity:0.2},outerGlow:{blur:40,opacity:0.5},ambientGlow:{blur:25,opacity:0},diffuse:{blur:35,opacity:0.6},hoverHaze:{blur:18,opacity:0.7},hoverDepth:{blur:8,opacity:0.5},haze:{blur:22,opacity:0.85},rimShadow:{blur:4,opacity:0},body:{blur:6,opacity:0.8},rimOuter:{blur:8,opacity:0.9},rimMid:{blur:5,opacity:0.85},rimInner:{blur:2,opacity:0.95},surface:{blur:1,opacity:1},chromatic:{blur:1.5,opacity:1},hotspot:{blur:2,opacity:1}};
   const THEME_LAYER_OVERRIDES={dark:{rimShadow:{blur:3,opacity:0.7},hoverHaze:{blur:18,opacity:0.6},hoverDepth:{blur:8,opacity:0.4}},yellow:{body:{blur:8,opacity:0.95},rimShadow:{blur:3,opacity:0.9},rimOuter:{blur:8,opacity:1},rimMid:{blur:5,opacity:1},rimInner:{blur:2,opacity:1},chromatic:{blur:0.5,opacity:1},surface:{blur:0.5,opacity:1},hotspot:{blur:30,opacity:1},hoverHaze:{blur:20,opacity:0.8},hoverDepth:{blur:10,opacity:0.6},ambientGlow:{blur:28,opacity:1}}};
-  const BP=180,GP=120,AP=80,DP=20,HHP=12,HDP=6,HP=120,PS=240,SN=100;
+  // PS / CS are *max* sample counts; per-instance _rimPS / _chromPS scale down
+  // while the cursor is moving fast (delta-driven) and ramp back up when it settles.
+  // The convergence loop already does the "ramp back up" automatically: when the
+  // user stops, quickTo deltas decay frame-by-frame, lerping PS back to the max
+  // before the dirty-check skip kicks in for the truly-settled state.
+  const BP=180,GP=120,AP=80,DP=20,HHP=12,HDP=6,HP=120,PS=240,PS_MIN=80,CS=200,CS_MIN=60,SN=100;
   
   /* ==========================================================================
      SPECULAR BUTTON
@@ -100,6 +114,7 @@ const THEMES = {
       // Durations derived from original lerp factors (95% convergence time)
       const dur={fast:{p:0.25,i:0.7},slow:{p:1.6,i:1.2},haze:{p:1.1,i:1.0},diff:{p:0.8,i:0.9},bg:{p:2.5,i:1.6},rim:{p:0.55,i:0.6},chrom:{p:0.7,i:0.75}};
       this.qFns={};
+      this._lastDraw={};
       for(const[k,g]of Object.entries(this.cursor)){
         const d=dur[k];
         this.qFns[k]={
@@ -107,32 +122,51 @@ const THEMES = {
           y:gsap.quickTo(g,'y',{duration:d.p,ease:'power3'}),
           i:gsap.quickTo(g,'i',{duration:d.i,ease:'power3'})
         };
+        this._lastDraw[k]={x:NaN,y:NaN,i:NaN};
       }
-      this._tilt={rx:0,ry:0};
-      this._qRx=gsap.quickTo(this._tilt,'rx',{duration:0.2,ease:'power2'});
-      this._qRy=gsap.quickTo(this._tilt,'ry',{duration:0.2,ease:'power2'});
+      // Route tilt directly through GSAP onto the element so the transform is
+      // batched & written by GSAP's render path (no per-frame string allocation
+      // or style write from our tick). will-change promotes the layer.
+      gsap.set(this.el,{transformPerspective:1000,willChange:'transform',force3D:true});
+      this._qRx=gsap.quickTo(this.el,'rotationX',{duration:0.2,ease:'power2'});
+      this._qRy=gsap.quickTo(this.el,'rotationY',{duration:0.2,ease:'power2'});
   
+      // Cache the bounding rect — getBoundingClientRect() on every mousemove
+      // forces sync layout and is one of the biggest sources of hover jank.
+      this._rect=null;
+      this._clamp01=gsap.utils.clamp(0,1);
+
+      // Adaptive sample counts — initialized to max so the first hover-in
+      // frame draws at full quality. tick() recomputes each frame.
+      this._rimPS=PS;this._chromPS=CS;
+
       this.active=false;this.samples=[];
       this._onEnter=this._handleEnter.bind(this);this._onMove=this._handleMove.bind(this);this._onLeave=this._handleLeave.bind(this);
       this.el.addEventListener('mouseenter',this._onEnter);this.el.addEventListener('mousemove',this._onMove);this.el.addEventListener('mouseleave',this._onLeave);
       this.resize();
     }
-    destroy(){this.el.removeEventListener('mouseenter',this._onEnter);this.el.removeEventListener('mousemove',this._onMove);this.el.removeEventListener('mouseleave',this._onLeave);for(const g of Object.values(this.cursor))gsap.killTweensOf(g);gsap.killTweensOf(this._tilt);this.active=false;}
+    destroy(){this.el.removeEventListener('mouseenter',this._onEnter);this.el.removeEventListener('mousemove',this._onMove);this.el.removeEventListener('mouseleave',this._onLeave);for(const g of Object.values(this.cursor))gsap.killTweensOf(g);gsap.killTweensOf(this.el);this.active=false;activeInstances.delete(this);}
     specularColor(a){return samplePalette(this.theme.specularHues,a);}
     rimColor(a){return samplePalette(this.theme.rimHues||this.theme.specularHues,a);}
     chromaticColor(a){if(this.theme.chromaticColor)return this.theme.chromaticColor;const t=((a%(Math.PI*2))+Math.PI*2)%(Math.PI*2),n=t/(Math.PI*2);return{r:Math.round(lerp(255,255,n)),g:Math.round(lerp(240,200,n)),b:Math.round(lerp(200,150,n))};}
   
     _handleEnter(e){
-      const r=this.el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+      // Refresh cached rect on enter only; mousemove reuses it to avoid
+      // forcing a synchronous layout on every mouse event.
+      this._rect=this.el.getBoundingClientRect();
+      const r=this._rect,clamp01=this._clamp01;
+      const x=clamp01((e.clientX-r.left)/r.width),y=clamp01((e.clientY-r.top)/r.height);
       // Snap all cursor groups to entry position so quickTo tweens start from here
       for(const g of Object.values(this.cursor)){g.x=x;g.y=y;}
       this.target.x=x;this.target.y=y;this.target.intensity=1;
       for(const fns of Object.values(this.qFns)){fns.x(x);fns.y(y);fns.i(1);}
       this._qRx((y-0.5)*-5);this._qRy((x-0.5)*5);
       this.active=true;
+      activeInstances.add(this);
     }
     _handleMove(e){
-      const r=this.el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+      const r=this._rect||(this._rect=this.el.getBoundingClientRect()),clamp01=this._clamp01;
+      const x=clamp01((e.clientX-r.left)/r.width),y=clamp01((e.clientY-r.top)/r.height);
       this.target.x=x;this.target.y=y;this.target.intensity=1;
       for(const fns of Object.values(this.qFns)){fns.x(x);fns.y(y);fns.i(1);}
       this._qRx((y-0.5)*-5);this._qRy((x-0.5)*5);
@@ -144,16 +178,72 @@ const THEMES = {
       this._qRx(0);this._qRy(0);
     }
   
-    resize(){this.dpr=devicePixelRatio||1;const rect=this.el.getBoundingClientRect();this.btnW=rect.width;this.btnH=rect.height;this.pill=new PillGeometry(this.btnW,this.btnH);const s=(c,w,h)=>{c.width=Math.ceil(w*this.dpr);c.height=Math.ceil(h*this.dpr);c.getContext('2d').setTransform(this.dpr,0,0,this.dpr,0,0);};s(this.bgCanvas,this.btnW+BP,this.btnH+BP);s(this.glowCanvas,this.btnW+GP,this.btnH+GP);s(this.mainCanvas,this.btnW,this.btnH);this._generateSamples();}
+    resize(){
+      this.dpr=devicePixelRatio||1;
+      // Glow + bg layers are heavily blurred (blur 25-55px), so rendering them at
+      // half DPR is visually identical and dramatically cuts the canvas pixel
+      // count (≈4× fewer pixels on a 3× DPR display → ~4× faster blur stamps).
+      this.glowDpr=Math.min(this.dpr,1.5);
+      const rect=this.el.getBoundingClientRect();
+      this.btnW=rect.width;this.btnH=rect.height;
+      this.pill=new PillGeometry(this.btnW,this.btnH);
+      const s=(c,w,h,d)=>{c.width=Math.ceil(w*d);c.height=Math.ceil(h*d);c.getContext('2d').setTransform(d,0,0,d,0,0);};
+      s(this.bgCanvas,this.btnW+BP,this.btnH+BP,this.glowDpr);
+      s(this.glowCanvas,this.btnW+GP,this.btnH+GP,this.glowDpr);
+      s(this.mainCanvas,this.btnW,this.btnH,this.dpr);
+      this._generateSamples();
+    }
     _generateSamples(){this.samples=[];const g=Math.PI*(3-Math.sqrt(5));for(let i=0;i<SN;i++){const t=(i+0.5)/SN;this.samples.push({radius:clamp(Math.sqrt(t)+(0.5-seededRandom(i*13))*0.04,0,1),angle:i*g+(0.5-seededRandom(i*7+3))*0.3,sizeMul:lerp(0.75,1.3,seededRandom(i*17+5)),alphaMul:lerp(0.7,1.3,seededRandom(i*23+11))});}}
   
     tick(){
       if(!this.active)return;
-      this.el.style.transform=`perspective(1000px) rotateX(${this._tilt.rx}deg) rotateY(${this._tilt.ry}deg)`;
+      // Tilt is animated directly on the element by GSAP's quickTo — no need
+      // to allocate a transform string or hit el.style every frame.
+
+      // Dirty check: when the cursor sits still while hovered, all 7 quickTo
+      // groups converge to their target and per-frame delta becomes tiny.
+      // Skipping _drawAll() in that window kills most of the hover lag, since
+      // each redraw runs ~1500 gradient ops + many blur-filter stamps.
+      //
+      // Threshold raised from 0.002 → 0.005: the human eye can't resolve a
+      // sub-half-percent change in a heavily-blurred gradient between two
+      // frames, so trading a few imperceptible mid-tween redraws for ~2-3 ms
+      // of frame budget is a clear win.
+      let delta=0;
+      for(const k in this.cursor){
+        const g=this.cursor[k],l=this._lastDraw[k];
+        delta+=Math.abs(g.x-l.x)+Math.abs(g.y-l.y)+Math.abs(g.i-l.i);
+      }
+      const leaving=this.target.intensity===0;
+      if(delta<0.005&&!leaving)return;
+
+      // Adaptive perimeter / chromatic sample count.
+      // Big delta = cursor still tweening toward a fast-moving target → drop
+      // PS to ~80 and CS to ~60 (visually invisible because motion blur from
+      // movement masks the lower sample density). Small delta = converging →
+      // PS/CS lerp back toward their full values so the settled state is HQ.
+      // (When the cursor stops, delta decays naturally over the quickTo's
+      // power3 ease, so we get a smooth ramp-up before the skip-threshold
+      // freezes the final HQ frame.)
+      const fast=delta>0.05?1:delta>0.005?(delta-0.005)/0.045:0;
+      this._rimPS=Math.round(lerp(PS,PS_MIN,fast));
+      this._chromPS=Math.round(lerp(CS,CS_MIN,fast));
+
+      for(const k in this.cursor){
+        const g=this.cursor[k],l=this._lastDraw[k];
+        l.x=g.x;l.y=g.y;l.i=g.i;
+      }
       this._drawAll();
-      if(this.target.intensity===0){
+
+      if(leaving){
         let maxI=0;for(const g of Object.values(this.cursor))maxI=Math.max(maxI,Math.abs(g.i));
-        if(maxI<0.001){this.active=false;this._drawAll();}
+        if(maxI<0.001){
+          this.active=false;
+          // Final clear pass (every I<0.003 guard fires, so all draws no-op;
+          // the clearRects in _drawAll wipe the canvases to a clean state).
+          this._drawAll();
+          activeInstances.delete(this);
+        }
       }
     }
   
@@ -176,52 +266,71 @@ const THEMES = {
       this._drawSurface();this._stamp(scratch,this.mainCtx,'surface',w,h,0,0);
       if(this.theme.hotspotEnabled){const hw=w+HP,hh=h+HP;this._drawHotspot(hw,hh);this._stamp(scratchLarge,this.glowCtx,'hotspot',hw,hh,(GP-HP)/2,(GP-HP)/2);}
     }
-    _stamp(buf,target,name,w,h,dx,dy){const L=this.layers[name];buf.stampTo(target,L.blur,L.opacity,dx,dy,w,h,this.dpr);}
+    _stamp(buf,target,name,w,h,dx,dy){const L=this.layers[name];buf.stampTo(target,L.blur,L.opacity,dx,dy,w,h);}
   
-    _drawBg(bw,bh){const ctx=scratchLarge.ensure(bw,bh,this.dpr);const p=this.pill,hp=BP/2,I=this.cursor.bg.i;if(I<0.003)return;const m=this.theme.bgIntensity,cr=this.theme.bgGlowColor,px=hp+this.cursor.bg.x*p.w,py=hp+this.cursor.bg.y*p.h;const g=ctx.createRadialGradient(px,py,0,px,py,bw*0.7);g.addColorStop(0,`rgba(${cr},${0.008*I*m})`);g.addColorStop(0.3,`rgba(${cr},${0.004*I*m})`);g.addColorStop(0.6,`rgba(${cr},${0.002*I*m})`);g.addColorStop(1,`rgba(${cr},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,bw,bh);}
+    _drawBg(bw,bh){const ctx=scratchLarge.ensure(bw,bh,this.glowDpr);const p=this.pill,hp=BP/2,I=this.cursor.bg.i;if(I<0.003)return;const m=this.theme.bgIntensity,cr=this.theme.bgGlowColor,px=hp+this.cursor.bg.x*p.w,py=hp+this.cursor.bg.y*p.h;const g=ctx.createRadialGradient(px,py,0,px,py,bw*0.7);g.addColorStop(0,`rgba(${cr},${0.008*I*m})`);g.addColorStop(0.3,`rgba(${cr},${0.004*I*m})`);g.addColorStop(0.6,`rgba(${cr},${0.002*I*m})`);g.addColorStop(1,`rgba(${cr},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,bw,bh);}
   
-    _drawOuterGlow(ow,oh){const ctx=scratchLarge.ensure(ow,oh,this.dpr);const p=this.pill,hp=GP/2,I=this.cursor.slow.i;if(I<0.003)return;const px=hp+this.cursor.slow.x*p.w,py=hp+this.cursor.slow.y*p.h;if(this.theme.outerGlowColor){const cr=this.theme.outerGlowColor,m=this.theme.outerGlowIntensity;const g=ctx.createRadialGradient(px,py,0,px,py,ow*0.6);g.addColorStop(0,`rgba(${cr},${0.006*I*m})`);g.addColorStop(0.3,`rgba(${cr},${0.003*I*m})`);g.addColorStop(0.6,`rgba(${cr},${0.001*I*m})`);g.addColorStop(1,`rgba(${cr},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,ow,oh);}else{const ca=Math.atan2(this.cursor.slow.y-0.5,this.cursor.slow.x-0.5);for(let i=0;i<8;i++){const a0=(i/8)*Math.PI*2,a1=((i+1)/8)*Math.PI*2,br=ow*0.6;const c=this.specularColor((a0+a1)/2+ca);const g=ctx.createRadialGradient(px,py,0,px,py,br);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.006*I})`);g.addColorStop(0.3,`rgba(${c.r},${c.g},${c.b},${0.003*I})`);g.addColorStop(0.6,`rgba(${c.r},${c.g},${c.b},${0.001*I})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a0)*br,py+Math.sin(a0)*br);ctx.lineTo(px+Math.cos(a1)*br,py+Math.sin(a1)*br);ctx.closePath();ctx.fillStyle=g;ctx.fill();}}}
+    _drawOuterGlow(ow,oh){const ctx=scratchLarge.ensure(ow,oh,this.glowDpr);const p=this.pill,hp=GP/2,I=this.cursor.slow.i;if(I<0.003)return;const px=hp+this.cursor.slow.x*p.w,py=hp+this.cursor.slow.y*p.h;if(this.theme.outerGlowColor){const cr=this.theme.outerGlowColor,m=this.theme.outerGlowIntensity;const g=ctx.createRadialGradient(px,py,0,px,py,ow*0.6);g.addColorStop(0,`rgba(${cr},${0.006*I*m})`);g.addColorStop(0.3,`rgba(${cr},${0.003*I*m})`);g.addColorStop(0.6,`rgba(${cr},${0.001*I*m})`);g.addColorStop(1,`rgba(${cr},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,ow,oh);}else{const ca=Math.atan2(this.cursor.slow.y-0.5,this.cursor.slow.x-0.5);for(let i=0;i<8;i++){const a0=(i/8)*Math.PI*2,a1=((i+1)/8)*Math.PI*2,br=ow*0.6;const c=this.specularColor((a0+a1)/2+ca);const g=ctx.createRadialGradient(px,py,0,px,py,br);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.006*I})`);g.addColorStop(0.3,`rgba(${c.r},${c.g},${c.b},${0.003*I})`);g.addColorStop(0.6,`rgba(${c.r},${c.g},${c.b},${0.001*I})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a0)*br,py+Math.sin(a0)*br);ctx.lineTo(px+Math.cos(a1)*br,py+Math.sin(a1)*br);ctx.closePath();ctx.fillStyle=g;ctx.fill();}}}
   
-    _drawAmbientGlow(aw,ah){const ctx=scratch.ensure(aw,ah,this.dpr);const p=this.pill,hp=AP/2,I=this.cursor.fast.i;if(I<0.003)return;const cfg=this.theme.ambientGlow,px=hp+this.target.x*p.w,py=hp+this.target.y*p.h,rad=aw*cfg.radius;const g=ctx.createRadialGradient(px,py,0,px,py,rad);g.addColorStop(0,`rgba(${cfg.color},${cfg.coreAlpha*I})`);g.addColorStop(0.35,`rgba(${cfg.color},${cfg.midAlpha*I})`);g.addColorStop(0.7,`rgba(${cfg.color},${cfg.edgeAlpha*I})`);g.addColorStop(1,`rgba(${cfg.color},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,aw,ah);}
+    _drawAmbientGlow(aw,ah){const ctx=scratch.ensure(aw,ah,this.glowDpr);const p=this.pill,hp=AP/2,I=this.cursor.fast.i;if(I<0.003)return;const cfg=this.theme.ambientGlow,px=hp+this.target.x*p.w,py=hp+this.target.y*p.h,rad=aw*cfg.radius;const g=ctx.createRadialGradient(px,py,0,px,py,rad);g.addColorStop(0,`rgba(${cfg.color},${cfg.coreAlpha*I})`);g.addColorStop(0.35,`rgba(${cfg.color},${cfg.midAlpha*I})`);g.addColorStop(0.7,`rgba(${cfg.color},${cfg.edgeAlpha*I})`);g.addColorStop(1,`rgba(${cfg.color},0)`);ctx.fillStyle=g;ctx.fillRect(0,0,aw,ah);}
   
-    _drawDiffuse(dw,dh){const ctx=scratch.ensure(dw,dh,this.dpr);const p=this.pill,hp=DP/2,I=this.cursor.diff.i;if(I<0.003)return;const m=this.theme.diffuseIntensity,px=hp+this.cursor.diff.x*p.w,py=hp+this.cursor.diff.y*p.h,ca=Math.atan2(this.cursor.diff.y-0.5,this.cursor.diff.x-0.5);for(let i=0;i<8;i++){const a0=(i/8)*Math.PI*2,a1=((i+1)/8)*Math.PI*2,br=dw*0.8;const c=this.specularColor((a0+a1)/2+ca+Math.PI*0.25);const g=ctx.createRadialGradient(px,py,0,px,py,br);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.004*I*m})`);g.addColorStop(0.25,`rgba(${c.r},${c.g},${c.b},${0.002*I*m})`);g.addColorStop(0.55,`rgba(${c.r},${c.g},${c.b},${0.001*I*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a0)*br,py+Math.sin(a0)*br);ctx.lineTo(px+Math.cos(a1)*br,py+Math.sin(a1)*br);ctx.closePath();ctx.fillStyle=g;ctx.fill();}}
+    _drawDiffuse(dw,dh){const ctx=scratch.ensure(dw,dh,this.glowDpr);const p=this.pill,hp=DP/2,I=this.cursor.diff.i;if(I<0.003)return;const m=this.theme.diffuseIntensity,px=hp+this.cursor.diff.x*p.w,py=hp+this.cursor.diff.y*p.h,ca=Math.atan2(this.cursor.diff.y-0.5,this.cursor.diff.x-0.5);for(let i=0;i<8;i++){const a0=(i/8)*Math.PI*2,a1=((i+1)/8)*Math.PI*2,br=dw*0.8;const c=this.specularColor((a0+a1)/2+ca+Math.PI*0.25);const g=ctx.createRadialGradient(px,py,0,px,py,br);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.004*I*m})`);g.addColorStop(0.25,`rgba(${c.r},${c.g},${c.b},${0.002*I*m})`);g.addColorStop(0.55,`rgba(${c.r},${c.g},${c.b},${0.001*I*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a0)*br,py+Math.sin(a0)*br);ctx.lineTo(px+Math.cos(a1)*br,py+Math.sin(a1)*br);ctx.closePath();ctx.fillStyle=g;ctx.fill();}}
   
-    _drawHoverHaze(cw,ch){const ctx=scratch.ensure(cw,ch,this.dpr);const hg=this.theme.hoverGlow;if(!hg)return;const p=this.pill,hp=HHP/2,I=this.cursor.haze.i;if(I<0.003)return;const cx=hp+p.w/2,cy=hp+p.h/2,rad=cw*hg.hazeRadius;const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);g.addColorStop(0,`rgba(${hg.hazeColor},${hg.hazeAlpha[0]*I})`);g.addColorStop(0.45,`rgba(${hg.hazeColor},${hg.hazeAlpha[1]*I})`);g.addColorStop(1,`rgba(${hg.hazeColor},${hg.hazeAlpha[2]*I})`);ctx.fillStyle=g;ctx.fillRect(0,0,cw,ch);}
+    _drawHoverHaze(cw,ch){const ctx=scratch.ensure(cw,ch,this.glowDpr);const hg=this.theme.hoverGlow;if(!hg)return;const p=this.pill,hp=HHP/2,I=this.cursor.haze.i;if(I<0.003)return;const cx=hp+p.w/2,cy=hp+p.h/2,rad=cw*hg.hazeRadius;const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);g.addColorStop(0,`rgba(${hg.hazeColor},${hg.hazeAlpha[0]*I})`);g.addColorStop(0.45,`rgba(${hg.hazeColor},${hg.hazeAlpha[1]*I})`);g.addColorStop(1,`rgba(${hg.hazeColor},${hg.hazeAlpha[2]*I})`);ctx.fillStyle=g;ctx.fillRect(0,0,cw,ch);}
   
-    _drawHoverDepth(cw,ch){const ctx=scratch.ensure(cw,ch,this.dpr);const hg=this.theme.hoverGlow;if(!hg)return;const p=this.pill,hp=HDP/2,I=this.cursor.fast.i;if(I<0.003)return;const cx=hp+p.w/2,cy=hp+p.h/2,rad=cw*hg.depthRadius;const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);g.addColorStop(0,`rgba(${hg.depthColor},${hg.depthAlpha[0]*I})`);g.addColorStop(0.4,`rgba(${hg.depthColor},${hg.depthAlpha[1]*I})`);g.addColorStop(1,`rgba(${hg.depthColor},${hg.depthAlpha[2]*I})`);ctx.fillStyle=g;ctx.fillRect(0,0,cw,ch);}
+    _drawHoverDepth(cw,ch){const ctx=scratch.ensure(cw,ch,this.glowDpr);const hg=this.theme.hoverGlow;if(!hg)return;const p=this.pill,hp=HDP/2,I=this.cursor.fast.i;if(I<0.003)return;const cx=hp+p.w/2,cy=hp+p.h/2,rad=cw*hg.depthRadius;const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);g.addColorStop(0,`rgba(${hg.depthColor},${hg.depthAlpha[0]*I})`);g.addColorStop(0.4,`rgba(${hg.depthColor},${hg.depthAlpha[1]*I})`);g.addColorStop(1,`rgba(${hg.depthColor},${hg.depthAlpha[2]*I})`);ctx.fillStyle=g;ctx.fillRect(0,0,cw,ch);}
   
     _drawHaze(){const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.haze.i;if(I<0.003)return;const m=this.theme.hazeIntensity,px=this.cursor.haze.x*p.w,py=this.cursor.haze.y*p.h,ca=Math.atan2(py-p.h/2,px-p.w/2);ctx.save();p.clip(ctx);ctx.clip();for(let i=0;i<12;i++){const a0=(i/12)*Math.PI*2,a1=((i+1)/12)*Math.PI*2,br=p.w*0.7;const c=this.specularColor((a0+a1)/2+ca);const g=ctx.createRadialGradient(px,py,0,px,py,br);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.004*I*m})`);g.addColorStop(0.3,`rgba(${c.r},${c.g},${c.b},${0.002*I*m})`);g.addColorStop(0.65,`rgba(${c.r},${c.g},${c.b},${0.0007*I*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a0)*br,py+Math.sin(a0)*br);ctx.lineTo(px+Math.cos(a1)*br,py+Math.sin(a1)*br);ctx.closePath();ctx.fillStyle=g;ctx.fill();}ctx.restore();}
   
     _drawBody(){const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.fast.i;if(I<0.003)return;const m=this.theme.bodyIntensity,px=this.cursor.fast.x*p.w,py=this.cursor.fast.y*p.h,cn=clamp(p.sdf(px,py)/p.r,0,1),edge=smoothstep(0.65,0.05,cn),ca=Math.atan2(py-p.h/2,px-p.w/2);ctx.save();p.clip(ctx);ctx.clip();const c0=this.specularColor(ca),gb=ctx.createRadialGradient(px,py,0,px,py,p.w*0.5);gb.addColorStop(0,`rgba(${c0.r},${c0.g},${c0.b},${0.03*I*m})`);gb.addColorStop(0.4,`rgba(${c0.r},${c0.g},${c0.b},${0.012*I*m})`);gb.addColorStop(1,`rgba(${c0.r},${c0.g},${c0.b},0)`);ctx.fillStyle=gb;ctx.fillRect(0,0,p.w,p.h);const ms=lerp(p.r*0.9,p.r*1.5,edge),ds=this.theme.bodyDotScale;for(const sp of this.samples){const sr=sp.radius*ms*0.6,ax=px+Math.cos(sp.angle)*sr,ay=py+Math.sin(sp.angle)*sr,mx=lerp(ax,px,0.5),my=lerp(ay,py,0.5),b=p.borderInfo(mx,my),to=(sp.radius-0.5)*2*ms,dt=lerp(0.2,0.95,sp.radius),bxx=lerp(px,b.bx,dt)+b.tx*to,byy=lerp(py,b.by,dt)+b.ty*to,dx=lerp(ax,bxx,edge),dy=lerp(ay,byy,edge);if(p.sdf(dx,dy)<-4)continue;const df=Math.hypot(dx-px,dy-py)/ms,fall=Math.exp(-df*df*1.2),bn=clamp(p.sdf(dx,dy)/p.r,0,1),rb=edge*(1-smoothstep(0,0.3,bn))*0.35,al=fall*(1+rb)*sp.alphaMul*I*0.04*m;if(al<0.003)continue;const da=Math.atan2(dy-py,dx-px),c=this.specularColor(da+ca),dr=lerp(14,28,sp.radius)*sp.sizeMul*ds,gr=ctx.createRadialGradient(dx,dy,0,dx,dy,dr);gr.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${al})`);gr.addColorStop(0.35,`rgba(${c.r},${c.g},${c.b},${al*0.35})`);gr.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.fillStyle=gr;ctx.fillRect(dx-dr-1,dy-dr-1,dr*2+2,dr*2+2);}ctx.restore();}
   
-    _drawRimShadow(){if(!this.theme.rimShadowEnabled)return;const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.rim.i;if(I<0.003)return;const cfg=this.theme.rimShadow,px=this.cursor.rim.x*p.w,py=this.cursor.rim.y*p.h,edgeProx=1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1),edgeBoost=smoothstep(0.3,1,edgeProx);ctx.save();p.clip(ctx);ctx.clip();for(let i=0;i<PS;i++){const pt=p.perimeterPoint(i/PS),ix=pt.x-pt.nx*cfg.inset,iy=pt.y-pt.ny*cfg.inset,dist=Math.hypot(ix-px,iy-py),prox=1-clamp(dist/(Math.hypot(p.w,p.h)*0.55),0,1),ci=Math.pow(prox,cfg.falloff),cI=ci*lerp(cfg.minBoost,1,edgeBoost)*I;if(cI<0.01)continue;const g=ctx.createRadialGradient(ix,iy,0,ix,iy,cfg.radius);cfg.colors.forEach((col,idx)=>{g.addColorStop(idx/(cfg.colors.length-1),`rgba(${col.r},${col.g},${col.b},${col.a*cI})`);});ctx.fillStyle=g;ctx.beginPath();ctx.arc(ix,iy,cfg.radius,0,Math.PI*2);ctx.fill();}ctx.restore();}
+    _drawRimShadow(){if(!this.theme.rimShadowEnabled)return;const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.rim.i;if(I<0.003)return;const cfg=this.theme.rimShadow,px=this.cursor.rim.x*p.w,py=this.cursor.rim.y*p.h,edgeProx=1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1),edgeBoost=smoothstep(0.3,1,edgeProx),rPS=this._rimPS;ctx.save();p.clip(ctx);ctx.clip();for(let i=0;i<rPS;i++){const pt=p.perimeterPoint(i/rPS),ix=pt.x-pt.nx*cfg.inset,iy=pt.y-pt.ny*cfg.inset,dist=Math.hypot(ix-px,iy-py),prox=1-clamp(dist/(Math.hypot(p.w,p.h)*0.55),0,1),ci=Math.pow(prox,cfg.falloff),cI=ci*lerp(cfg.minBoost,1,edgeBoost)*I;if(cI<0.01)continue;const g=ctx.createRadialGradient(ix,iy,0,ix,iy,cfg.radius);cfg.colors.forEach((col,idx)=>{g.addColorStop(idx/(cfg.colors.length-1),`rgba(${col.r},${col.g},${col.b},${col.a*cI})`);});ctx.fillStyle=g;ctx.beginPath();ctx.arc(ix,iy,cfg.radius,0,Math.PI*2);ctx.fill();}ctx.restore();}
   
-    _drawRimLayer(w,alphas){const p=this.pill,T=this.theme,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.rim.i;if(I<0.003)return;const px=this.cursor.rim.x*p.w,py=this.cursor.rim.y*p.h,ca=Math.atan2(py-p.h/2,px-p.w/2),edgeBoost=smoothstep(0.3,1,1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1)),m=T.rimIntensity,pw=T.rimFalloffPower,maxDist=Math.hypot(p.w,p.h)*T.rimDetectionRange;ctx.save();p.clip(ctx);ctx.clip();for(let i=0;i<PS;i++){const pt=p.perimeterPoint(i/PS),prox=1-clamp(Math.hypot(pt.x-px,pt.y-py)/maxDist,0,1),cI=Math.pow(prox,pw)*lerp(T.rimEdgeMinBoost,1,edgeBoost)*I;if(cI<0.01)continue;const c=this.rimColor(pt.angle+ca),g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,w);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${alphas[0]*cI*m})`);g.addColorStop(0.6,`rgba(${c.r},${c.g},${c.b},${alphas[1]*cI*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(pt.x,pt.y,w,0,Math.PI*2);ctx.fill();}ctx.restore();}
+    _drawRimLayer(w,alphas){const p=this.pill,T=this.theme,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.rim.i;if(I<0.003)return;const px=this.cursor.rim.x*p.w,py=this.cursor.rim.y*p.h,ca=Math.atan2(py-p.h/2,px-p.w/2),edgeBoost=smoothstep(0.3,1,1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1)),m=T.rimIntensity,pw=T.rimFalloffPower,maxDist=Math.hypot(p.w,p.h)*T.rimDetectionRange,rPS=this._rimPS;ctx.save();p.clip(ctx);ctx.clip();for(let i=0;i<rPS;i++){const pt=p.perimeterPoint(i/rPS),prox=1-clamp(Math.hypot(pt.x-px,pt.y-py)/maxDist,0,1),cI=Math.pow(prox,pw)*lerp(T.rimEdgeMinBoost,1,edgeBoost)*I;if(cI<0.01)continue;const c=this.rimColor(pt.angle+ca),g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,w);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${alphas[0]*cI*m})`);g.addColorStop(0.6,`rgba(${c.r},${c.g},${c.b},${alphas[1]*cI*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(pt.x,pt.y,w,0,Math.PI*2);ctx.fill();}ctx.restore();}
   
-    _drawChromatic(){const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.chrom.i;if(I<0.003)return;const T=this.theme,m=T.chromaticIntensity,pw=T.chromaticFalloff,ew=T.chromaticEdgeWidth,px=this.cursor.chrom.x*p.w,py=this.cursor.chrom.y*p.h,edgeBoost=smoothstep(0.3,1,1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1));ctx.save();p.clip(ctx);ctx.clip();for(const{off,a:alpha}of[{off:-0.8,a:0.35},{off:0,a:0.45},{off:0.8,a:0.35}]){for(let i=0;i<200;i++){const pt=p.perimeterPoint(i/200),ox=pt.x+pt.nx*off,oy=pt.y+pt.ny*off,prox=1-clamp(Math.hypot(ox-px,oy-py)/(Math.hypot(p.w,p.h)*0.45),0,1),cI=Math.pow(prox,pw)*(0.25+0.75*edgeBoost)*I*alpha;if(cI<0.006)continue;const c=this.chromaticColor(pt.angle),g=ctx.createRadialGradient(ox,oy,0,ox,oy,ew);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.25*cI*m})`);g.addColorStop(0.7,`rgba(${c.r},${c.g},${c.b},${0.10*cI*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(ox,oy,ew,0,Math.PI*2);ctx.fill();}}ctx.restore();}
+    _drawChromatic(){const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.chrom.i;if(I<0.003)return;const T=this.theme,m=T.chromaticIntensity,pw=T.chromaticFalloff,ew=T.chromaticEdgeWidth,px=this.cursor.chrom.x*p.w,py=this.cursor.chrom.y*p.h,edgeBoost=smoothstep(0.3,1,1-clamp(Math.abs(p.sdf(px,py))/p.r,0,1)),cPS=this._chromPS;ctx.save();p.clip(ctx);ctx.clip();for(const{off,a:alpha}of[{off:-0.8,a:0.35},{off:0,a:0.45},{off:0.8,a:0.35}]){for(let i=0;i<cPS;i++){const pt=p.perimeterPoint(i/cPS),ox=pt.x+pt.nx*off,oy=pt.y+pt.ny*off,prox=1-clamp(Math.hypot(ox-px,oy-py)/(Math.hypot(p.w,p.h)*0.45),0,1),cI=Math.pow(prox,pw)*(0.25+0.75*edgeBoost)*I*alpha;if(cI<0.006)continue;const c=this.chromaticColor(pt.angle),g=ctx.createRadialGradient(ox,oy,0,ox,oy,ew);g.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${0.25*cI*m})`);g.addColorStop(0.7,`rgba(${c.r},${c.g},${c.b},${0.10*cI*m})`);g.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(ox,oy,ew,0,Math.PI*2);ctx.fill();}}ctx.restore();}
   
     _drawSurface(){const p=this.pill,ctx=scratch.ensure(p.w,p.h,this.dpr),I=this.cursor.fast.i;if(I<0.003)return;const T=this.theme,m=T.surfaceIntensity,px=this.cursor.fast.x*p.w,py=this.cursor.fast.y*p.h,edge=smoothstep(0.65,0.05,clamp(p.sdf(px,py)/p.r,0,1)),ca=Math.atan2(py-p.h/2,px-p.w/2),c=this.rimColor(ca);ctx.save();p.clip(ctx);const ba=lerp(0.02,0.1,edge)*I*m,bg=ctx.createRadialGradient(px,py,0,px,py,p.w*0.4);bg.addColorStop(0,`rgba(${c.r},${c.g},${c.b},${ba})`);bg.addColorStop(0.4,`rgba(${c.r},${c.g},${c.b},${ba*0.3})`);bg.addColorStop(1,`rgba(${c.r},${c.g},${c.b},0)`);ctx.lineWidth=T.surfaceLineWidth;ctx.strokeStyle=bg;ctx.shadowColor=`rgba(${c.r},${c.g},${c.b},${0.1*edge*I*m})`;ctx.shadowBlur=T.surfaceShadowBlur;ctx.stroke();ctx.restore();}
   
-    _drawHotspot(cw,ch){const ctx=scratchLarge.ensure(cw,ch,this.dpr);const p=this.pill,hp=HP/2,I=this.cursor.fast.i;if(I<0.003)return;const cfg=this.theme.hotspot,col=cfg.colors,px=hp+this.target.x*p.w,py=hp+this.target.y*p.h;const colAt=(t)=>{const idx=t*(col.length-1),i=Math.floor(idx),f=idx-i,a=col[Math.min(i,col.length-1)],b=col[Math.min(i+1,col.length-1)];return{r:Math.round(lerp(a.r,b.r,f)),g:Math.round(lerp(a.g,b.g,f)),b:Math.round(lerp(a.b,b.b,f))};};const r1=p.r*cfg.coreRadius,g1=ctx.createRadialGradient(px,py,0,px,py,r1);for(let i=0;i<=16;i++){const t=i/16,c=colAt(t);g1.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.coreAlpha*Math.exp(-t*t*4.5)*I})`);}ctx.fillStyle=g1;ctx.fillRect(0,0,cw,ch);const r2=cw*cfg.washRadius,g2=ctx.createRadialGradient(px,py,0,px,py,r2);for(let i=0;i<=18;i++){const t=i/18,c=colAt(t);g2.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.washAlpha*Math.exp(-t*t*3.8)*I})`);}ctx.fillStyle=g2;ctx.fillRect(0,0,cw,ch);const sw=cw*cfg.streakWidth,sh=p.r*cfg.streakHeight;ctx.save();ctx.translate(px,py);ctx.scale(sw/sh,1);ctx.translate(-px,-py);const g3=ctx.createRadialGradient(px,py,0,px,py,sh);for(let i=0;i<=14;i++){const t=i/14,c=colAt(t);g3.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.streakAlpha*Math.exp(-t*t*4.0)*I})`);}ctx.fillStyle=g3;ctx.fillRect(px-sw,py-sh,sw*2,sh*2);ctx.restore();}
+    _drawHotspot(cw,ch){const ctx=scratchLarge.ensure(cw,ch,this.glowDpr);const p=this.pill,hp=HP/2,I=this.cursor.fast.i;if(I<0.003)return;const cfg=this.theme.hotspot,col=cfg.colors,px=hp+this.target.x*p.w,py=hp+this.target.y*p.h;const colAt=(t)=>{const idx=t*(col.length-1),i=Math.floor(idx),f=idx-i,a=col[Math.min(i,col.length-1)],b=col[Math.min(i+1,col.length-1)];return{r:Math.round(lerp(a.r,b.r,f)),g:Math.round(lerp(a.g,b.g,f)),b:Math.round(lerp(a.b,b.b,f))};};const r1=p.r*cfg.coreRadius,g1=ctx.createRadialGradient(px,py,0,px,py,r1);for(let i=0;i<=16;i++){const t=i/16,c=colAt(t);g1.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.coreAlpha*Math.exp(-t*t*4.5)*I})`);}ctx.fillStyle=g1;ctx.fillRect(0,0,cw,ch);const r2=cw*cfg.washRadius,g2=ctx.createRadialGradient(px,py,0,px,py,r2);for(let i=0;i<=18;i++){const t=i/18,c=colAt(t);g2.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.washAlpha*Math.exp(-t*t*3.8)*I})`);}ctx.fillStyle=g2;ctx.fillRect(0,0,cw,ch);const sw=cw*cfg.streakWidth,sh=p.r*cfg.streakHeight;ctx.save();ctx.translate(px,py);ctx.scale(sw/sh,1);ctx.translate(-px,-py);const g3=ctx.createRadialGradient(px,py,0,px,py,sh);for(let i=0;i<=14;i++){const t=i/14,c=colAt(t);g3.addColorStop(t,`rgba(${c.r},${c.g},${c.b},${cfg.streakAlpha*Math.exp(-t*t*4.0)*I})`);}ctx.fillStyle=g3;ctx.fillRect(px-sw,py-sh,sw*2,sh*2);ctx.restore();}
   }
   
   /* ==========================================================================
      INIT
      ========================================================================== */
-  document.querySelectorAll('.spec-btn--dark').forEach(btn => {
+  gsap.utils.toArray('.spec-btn--dark').forEach(btn => {
     allInstances.push(new SpecularButton(btn, 'dark'));
   });
 
-  document.querySelectorAll('.spec-btn--yellow').forEach(btn => {
+  gsap.utils.toArray('.spec-btn--yellow').forEach(btn => {
     allInstances.push(new SpecularButton(btn, 'yellow'));
   });
-  
-  // Single shared ticker — all instances draw on one RAF instead of 8 separate ones
+
+  // Single shared ticker — all *active* instances draw on one RAF. Instances
+  // are added on mouseenter and removed after their fade-out fully completes,
+  // so when nothing is hovered this loop iterates zero times (a meaningful
+  // saving when the page has many spec-btns sitting idle).
   gsap.ticker.add(() => {
-    for(const inst of allInstances) inst.tick();
+    for(const inst of activeInstances) inst.tick();
   });
-  
+
   window.addEventListener('resize', () => {
-    allInstances.forEach(inst => inst.resize());
+    allInstances.forEach(inst => {
+      inst.resize();
+      inst._rect = inst.el.getBoundingClientRect();
+    });
   });
+
+  // Invalidate the cached rect on scroll (throttled to 1 read per RAF across
+  // all instances) so hover stays aligned if the page scrolls during a hover.
+  let scrollRaf = 0;
+  window.addEventListener('scroll', () => {
+    if(scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0;
+      for(const inst of allInstances){
+        if(inst.active) inst._rect = inst.el.getBoundingClientRect();
+      }
+    });
+  }, {passive: true});
 });

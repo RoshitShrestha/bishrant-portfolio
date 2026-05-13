@@ -188,6 +188,28 @@ const normHold     = gsap.utils.normalize(0, CONFIG.press.maxHoldFrames);
 const setCurLeft = gsap.quickSetter(cur, 'left', 'px');
 const setCurTop  = gsap.quickSetter(cur, 'top',  'px');
 
+// will-change promotes cursor + outer to their own compositor layer so the per-frame
+// transform/paint writes don't invalidate sibling layout (notably: the spec-btn
+// canvases that sit on the page underneath the cursor).
+gsap.set([cur, outer], { willChange: 'transform' });
+
+// Position dirty cache — `setCurLeft/Top` are cheap, but skipping the style write
+// when the mouse is perfectly still removes a paint per idle frame.
+let _lastMx = NaN, _lastMy = NaN;
+
+// Outer-element dirty cache. width/height + boxShadow are paint-and-layout heavy;
+// after the wrap-spring settles on a hovered button these stop changing and we
+// can skip the writes entirely. Saves the bulk of the per-frame DOM cost while
+// hovering a button.
+const _lastOuter = { w: -1, h: -1, br: -1, tx: NaN, ty: NaN, op: -1 };
+
+// Cached bounding rect of the hovered button. Reading it on every mousemove was
+// the single biggest source of cross-script jank because specbtn.js has a pending
+// GSAP rotation tween on that element, so each getBoundingClientRect() forced a
+// sync layout flush of the buttons' canvases. Now read once on mouseover entry,
+// refreshed on scroll/resize.
+let _btnRect = null;
+
 
 // ============================================================================
 //  5. MODE DETECTION & APPLICATION
@@ -207,9 +229,10 @@ function applyInnerMode(name) {
     }
 }
 
-function wrapOuterAround(el) {
-    const r = el.getBoundingClientRect();
-    const pad = CONFIG.button.padding;
+// Build outer-wrap target from the cached rect — zero layout reads.
+function wrapOuterAroundCached() {
+    if (!_btnRect) return;
+    const r = _btnRect, pad = CONFIG.button.padding;
     OUTER_TGT.x  = r.left + r.width / 2;
     OUTER_TGT.y  = r.top  + r.height / 2;
     OUTER_TGT.w  = r.width  + pad * 2;
@@ -228,31 +251,65 @@ function parkOuterAtMouse() {
 // ============================================================================
 //  6. EVENT HANDLERS
 // ============================================================================
+// Hot path: just record mouse position + reset idle timer. No layout reads, no
+// mode detection. Mode detection moved to mouseover delegation below — that
+// fires once per element change instead of dozens of times per second, which
+// removes elementFromPoint() and getBoundingClientRect() from the path that
+// runs while the user hovers a spec-btn (the source of the cross-script lag).
 document.addEventListener('mousemove', (e) => {
     mx = e.clientX; my = e.clientY;
     idleT = 0; idleTargetAmp = 0;
-
     if (firstMove) { OUTER_CUR.x = mx; OUTER_CUR.y = my; firstMove = false; }
+    if (mode !== 'button') parkOuterAtMouse();
+}, { passive: true });
 
-    const el = document.elementFromPoint(mx, my);
+// Mode detection — runs only when the cursor crosses into a new element.
+// mouseover bubbles, so a single delegated listener handles every element on
+// the page. `e.target` is the topmost element under the pointer (same element
+// elementFromPoint() would have returned), so detectMode() logic is unchanged.
+document.addEventListener('mouseover', (e) => {
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
     const newMode = detectMode(el);
 
     if (newMode !== mode) {
         mode = newMode;
         applyInnerMode(newMode);
         hoverPulseT = 0;
-        if (newMode !== 'button') btnEl = null;
+        if (newMode !== 'button') {
+            btnEl = null; _btnRect = null;
+            parkOuterAtMouse();
+        }
     }
 
-    if (newMode === 'button') {
-        if (btnEl !== el) {
-            btnEl = el;
-            // Read border-radius once per button entry (style recalc is expensive)
-            btnRadius = parseFloat(getComputedStyle(el).borderRadius) || 12;
+    if (newMode === 'button' && btnEl !== el) {
+        btnEl = el;
+        // Single style + layout read per button entry instead of per mousemove.
+        btnRadius = parseFloat(getComputedStyle(el).borderRadius) || 12;
+        _btnRect = el.getBoundingClientRect();
+        wrapOuterAroundCached();
+    }
+}, { passive: true });
+
+// Keep the cached rect aligned when the page scrolls / resizes. Throttled to a
+// single layout read per RAF (mirrors specbtn.js's own scroll throttle so the
+// two scripts don't both read in the same frame).
+let _scrollRaf = 0;
+window.addEventListener('scroll', () => {
+    if (_scrollRaf || !btnEl) return;
+    _scrollRaf = requestAnimationFrame(() => {
+        _scrollRaf = 0;
+        if (btnEl) {
+            _btnRect = btnEl.getBoundingClientRect();
+            wrapOuterAroundCached();
         }
-        wrapOuterAround(el);
-    } else {
-        parkOuterAtMouse();
+    });
+}, { passive: true });
+
+window.addEventListener('resize', () => {
+    if (btnEl) {
+        _btnRect = btnEl.getBoundingClientRect();
+        wrapOuterAroundCached();
     }
 });
 
@@ -298,8 +355,11 @@ function dirSeg(vx, vy) {
 
 function animate() {
     // ---- Position & velocity ----
-    setCurLeft(mx);
-    setCurTop(my);
+    // Skip the style write when the mouse hasn't moved. setCurLeft/Top are
+    // already quick, but eliminating the paint on idle frames removes the
+    // baseline cost that compounds with specbtn.js's RAF work.
+    if (mx !== _lastMx) { setCurLeft(mx); _lastMx = mx; }
+    if (my !== _lastMy) { setCurTop(my);  _lastMy = my; }
     const vx = mx - px, vy = my - py;
     const spd = Math.sqrt(vx * vx + vy * vy);
     px = mx; py = my;
@@ -381,19 +441,35 @@ function animate() {
     }
 
     // ---- Render: CSS-div outer ----
+    // Each write below is dirty-checked. width/height are layout-triggering and
+    // boxShadow is paint-heavy; once the wrap-spring settles on a hovered
+    // button these values stop changing and every write below is skipped —
+    // which is exactly when specbtn.js is doing its own heavy canvas work, so
+    // freeing the main thread here directly helps it stay at 60fps.
     const pressShrink = sqz * 2;
     const ow = Math.max(0, OUTER_CUR.w - pressShrink);
     const oh = Math.max(0, OUTER_CUR.h - pressShrink);
     const outerOp = OUTER_CUR.op > 0 ? OUTER_CUR.op : 0;
-    outerStyle.width  = ow + 'px';
-    outerStyle.height = oh + 'px';
-    outerStyle.borderRadius = OUTER_CUR.br + 'px';
-    outerStyle.transform    = `translate3d(${(OUTER_CUR.x - ow/2)|0}px, ${(OUTER_CUR.y - oh/2)|0}px, 0)`;
-    outerStyle.borderColor  = `rgba(255,255,255,${outerOp.toFixed(2)})`;
-    // Two-layer outline: solid 1px line + 3px soft falloff for visibility on bright surfaces
-    outerStyle.boxShadow =
-        `0 0 0 1px rgba(0,0,0,${(outerOp * 0.95).toFixed(2)}),` +
-        `0 0 4px rgba(0,0,0,${(outerOp * 0.5).toFixed(2)})`;
+    const tx = (OUTER_CUR.x - ow/2)|0;
+    const ty = (OUTER_CUR.y - oh/2)|0;
+    const br = OUTER_CUR.br;
+
+    if (Math.abs(ow - _lastOuter.w) > 0.5)  { outerStyle.width  = ow + 'px'; _lastOuter.w = ow; }
+    if (Math.abs(oh - _lastOuter.h) > 0.5)  { outerStyle.height = oh + 'px'; _lastOuter.h = oh; }
+    if (Math.abs(br - _lastOuter.br) > 0.3) { outerStyle.borderRadius = br + 'px'; _lastOuter.br = br; }
+    if (tx !== _lastOuter.tx || ty !== _lastOuter.ty) {
+        outerStyle.transform = `translate3d(${tx}px,${ty}px,0)`;
+        _lastOuter.tx = tx; _lastOuter.ty = ty;
+    }
+    if (Math.abs(outerOp - _lastOuter.op) > 0.005) {
+        const a0 = outerOp.toFixed(2);
+        const a1 = (outerOp * 0.95).toFixed(2);
+        const a2 = (outerOp * 0.5).toFixed(2);
+        outerStyle.borderColor = `rgba(255,255,255,${a0})`;
+        // Two-layer outline: solid 1px line + 3px soft falloff for visibility on bright surfaces
+        outerStyle.boxShadow   = `0 0 0 1px rgba(0,0,0,${a1}),0 0 4px rgba(0,0,0,${a2})`;
+        _lastOuter.op = outerOp;
+    }
 
     // ---- Render: SVG inner shapes ----
     const vcx = 40 + vibJitterX;
