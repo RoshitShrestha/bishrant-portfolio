@@ -22,7 +22,7 @@ const CONFIG = {
     // CSS selectors that decide which mode each element triggers. Extend as needed.
     // Use descendant combinators (e.g. 'p span') to match by ancestor.
     triggers: {
-        text:   'h1, h1 *, h2, h2 div, p, p span, p em, p strong',  // text-mode for inline children of <p>
+        text:   'h1, h1 *, h2, h2 div, p, p span, p em, p strong, input, textarea',  // text-mode for inline children of <p>
         button: 'button, a.spec-btn',                         // add ', a' to include links
         // Opt-out region: any element inside a match here will NOT receive text mode,
         // even if it matches `triggers.text`. Useful for clickable cards that contain
@@ -133,6 +133,8 @@ let mode = 'default';
 let btnEl = null;
 let btnRadius = 12;
 let firstMove = true;
+/** While true, custom cursor + outer wrap are hidden (e.g. over an iframe). */
+let cursorHiddenForIframe = false;
 
 // Idle breathing
 let idleT = 0;
@@ -275,6 +277,16 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseover', (e) => {
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
+    // Parent document only sees the iframe itself as the hit target; once the pointer
+    // moves into the iframe's document, no further events fire here until it leaves.
+    const overIframe = el instanceof HTMLIFrameElement;
+    if (overIframe !== cursorHiddenForIframe) {
+        cursorHiddenForIframe = overIframe;
+        const vis = overIframe ? 'hidden' : 'visible';
+        cur.style.visibility = vis;
+        outer.style.visibility = vis;
+    }
+
     const newMode = detectMode(el);
 
     if (newMode !== mode) {
