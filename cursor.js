@@ -24,6 +24,10 @@ const CONFIG = {
     triggers: {
         text:   'h1, h1 *, h2, h2 div, p, p span, p em, p strong',  // text-mode for inline children of <p>
         button: 'button, a.spec-btn',                         // add ', a' to include links
+        // Opt-out region: any element inside a match here will NOT receive text mode,
+        // even if it matches `triggers.text`. Useful for clickable cards that contain
+        // <p>/<h1> markup but should feel like a single pointer target.
+        textIgnoreInside: '[data-cursor="pointer"]',
     },
     // Spring physics: [stiffness, damping]. Higher stiffness = snappier.
     springs: {
@@ -216,8 +220,9 @@ let _btnRect = null;
 // ============================================================================
 function detectMode(el) {
     if (!el || el.nodeType !== 1) return 'default';
-    if (el.matches(CONFIG.triggers.text))   return 'text';
+    // Button takes precedence so a real <button> inside a pointer region still wraps.
     if (el.matches(CONFIG.triggers.button)) return 'button';
+    if (el.matches(CONFIG.triggers.text) && !el.closest(CONFIG.triggers.textIgnoreInside)) return 'text';
     return 'default';
 }
 
