@@ -32,7 +32,7 @@ const CONFIG = {
     // Spring physics: [stiffness, damping]. Higher stiffness = snappier.
     springs: {
         inner: [175, 23],             // SVG cursor morphs
-        outer: [190, 24],             // CSS div that wraps buttons
+        outer: [250, 24],             // CSS div that wraps buttons
         press: [120, 18],             // click-and-hold squeeze
     },
     button: {
@@ -467,8 +467,8 @@ function animate() {
     const ow = Math.max(0, OUTER_CUR.w - pressShrink);
     const oh = Math.max(0, OUTER_CUR.h - pressShrink);
     const outerOp = OUTER_CUR.op > 0 ? OUTER_CUR.op : 0;
-    const tx = (OUTER_CUR.x - ow/2)|0;
-    const ty = (OUTER_CUR.y - oh/2)|0;
+    const tx = OUTER_CUR.x - ow / 2;
+    const ty = OUTER_CUR.y - oh / 2;
     const br = OUTER_CUR.br;
 
     if (Math.abs(ow - _lastOuter.w) > 0.5)  { outerStyle.width  = ow + 'px'; _lastOuter.w = ow; }

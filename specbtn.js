@@ -124,13 +124,6 @@ const THEMES = {
         };
         this._lastDraw[k]={x:NaN,y:NaN,i:NaN};
       }
-      // Route tilt directly through GSAP onto the element so the transform is
-      // batched & written by GSAP's render path (no per-frame string allocation
-      // or style write from our tick). will-change promotes the layer.
-      gsap.set(this.el,{transformPerspective:1000,willChange:'transform',force3D:true});
-      this._qRx=gsap.quickTo(this.el,'rotationX',{duration:0.2,ease:'power2'});
-      this._qRy=gsap.quickTo(this.el,'rotationY',{duration:0.2,ease:'power2'});
-  
       // Cache the bounding rect — getBoundingClientRect() on every mousemove
       // forces sync layout and is one of the biggest sources of hover jank.
       this._rect=null;
@@ -160,7 +153,6 @@ const THEMES = {
       for(const g of Object.values(this.cursor)){g.x=x;g.y=y;}
       this.target.x=x;this.target.y=y;this.target.intensity=1;
       for(const fns of Object.values(this.qFns)){fns.x(x);fns.y(y);fns.i(1);}
-      this._qRx((y-0.5)*-5);this._qRy((x-0.5)*5);
       this.active=true;
       activeInstances.add(this);
     }
@@ -169,13 +161,11 @@ const THEMES = {
       const x=clamp01((e.clientX-r.left)/r.width),y=clamp01((e.clientY-r.top)/r.height);
       this.target.x=x;this.target.y=y;this.target.intensity=1;
       for(const fns of Object.values(this.qFns)){fns.x(x);fns.y(y);fns.i(1);}
-      this._qRx((y-0.5)*-5);this._qRy((x-0.5)*5);
       this.active=true;
     }
     _handleLeave(){
       this.target.intensity=0;
       for(const fns of Object.values(this.qFns))fns.i(0);
-      this._qRx(0);this._qRy(0);
     }
   
     resize(){
@@ -197,8 +187,6 @@ const THEMES = {
   
     tick(){
       if(!this.active)return;
-      // Tilt is animated directly on the element by GSAP's quickTo — no need
-      // to allocate a transform string or hit el.style every frame.
 
       // Dirty check: when the cursor sits still while hovered, all 7 quickTo
       // groups converge to their target and per-frame delta becomes tiny.
