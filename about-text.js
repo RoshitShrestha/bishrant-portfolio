@@ -1,5 +1,35 @@
 let flipCtx;
 
+// Always start the page at the top on (re)load instead of the browser
+// restoring the previous scroll position.
+if ("scrollRestoration" in history) {
+  history.scrollRestoration = "manual";
+}
+
+// Force the page to the top on (re)load. Combines native scroll resets
+// with Lenis so both stay in sync, then re-applies on the next frame
+// to catch any late layout shifts.
+function scrollToTop() {
+  if (typeof window !== "undefined") {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+  if (typeof lenis !== "undefined" && lenis?.scrollTo) {
+    lenis.scrollTo(0, { immediate: true });
+  }
+  if (typeof requestAnimationFrame !== "undefined") {
+    requestAnimationFrame(() => {
+      if (typeof window !== "undefined") {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+    });
+  }
+}
+scrollToTop();
+
 function loaderAnimation() {
   const transitionBlock = document.querySelector("[data-transition-page-block]");
 
@@ -383,5 +413,6 @@ window.addEventListener(
 );
 
 window.addEventListener("load", () => {
+  scrollToTop();
   ScrollTrigger.refresh();
 });
