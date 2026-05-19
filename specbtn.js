@@ -22,20 +22,17 @@ const THEMES = {
       rimHues:[{r:255,g:255,b:235},{r:255,g:253,b:225},{r:255,g:255,b:232},{r:255,g:252,b:218},{r:255,g:255,b:230},{r:255,g:250,b:222}],
       chromaticColor:{r:255,g:250,b:190},
       bgGlowColor:'220,225,60', outerGlowColor:'230,235,80',
-      bgIntensity:1.5, diffuseIntensity:2.5, hazeIntensity:2.5,
-      bodyIntensity:3.5, bodyDotScale:0.7,
-      rimIntensity:5, rimFalloffPower:1.8, rimEdgeMinBoost:0.3, rimDetectionRange:0.55,
-      chromaticIntensity:4, chromaticFalloff:1.8, chromaticEdgeWidth:3.5,
-      surfaceIntensity:2.5, surfaceLineWidth:2, surfaceShadowBlur:10,
-      outerGlowIntensity:3,
-      rimOuterAlphas:[0.50,0.20], rimMidAlphas:[0.70,0.30], rimInnerAlphas:[0.90,0.40],
+      bgIntensity:0.25, diffuseIntensity:0.45, hazeIntensity:0.42,
+      bodyIntensity:3.0, bodyDotScale:0.95,
+      rimIntensity:0.7, rimFalloffPower:2.6, rimEdgeMinBoost:0.055, rimDetectionRange:0.48,
+      chromaticIntensity:0.3, chromaticFalloff:2.8, chromaticEdgeWidth:2.0,
+      surfaceIntensity:0.38, surfaceLineWidth:0.9, surfaceShadowBlur:4,
+      outerGlowIntensity:0.3,
+      rimOuterAlphas:[0.06,0.022], rimMidAlphas:[0.085,0.032], rimInnerAlphas:[0.12,0.045],
       rimShadowEnabled:true,
-      rimShadow:{inset:4,radius:6,falloff:1.8,minBoost:0.25,colors:[{r:160,g:148,b:30,a:0.15},{r:170,g:158,b:40,a:0.06},{r:180,g:168,b:50,a:0.00}]},
-      hotspotEnabled:true,
-      hotspot:{coreRadius:16,coreAlpha:0.09,washRadius:7,washAlpha:0.045,streakWidth:8,streakHeight:4,streakAlpha:0.03,
-        colors:[{r:255,g:252,b:215},{r:255,g:250,b:200},{r:255,g:248,b:180},{r:255,g:245,b:165},{r:255,g:242,b:145},{r:252,g:245,b:170},{r:250,g:240,b:150}]},
-      ambientGlowEnabled:true,
-      ambientGlow:{color:'245,242,120',radius:0.7,coreAlpha:0.06,midAlpha:0.03,edgeAlpha:0.01},
+      rimShadow:{inset:3,radius:5,falloff:2.0,minBoost:0.20,colors:[{r:90,g:80,b:15,a:0.20},{r:100,g:90,b:20,a:0.08},{r:110,g:100,b:25,a:0.00}]},
+      hotspotEnabled:false, ambientGlowEnabled:false,
+      hoverGlow:{hazeColor:'220,225,80',hazeAlpha:[0.005,0.0022,0.0010],hazeRadius:0.85,depthColor:'210,215,70',depthAlpha:[0.006,0.0026,0.0012],depthRadius:0.6},
     },
   };
   
@@ -89,7 +86,7 @@ const THEMES = {
      LAYER DEFS
      ========================================================================== */
   const LAYER_DEFS={background:{blur:55,opacity:0.2},outerGlow:{blur:40,opacity:0.5},ambientGlow:{blur:25,opacity:0},diffuse:{blur:35,opacity:0.6},hoverHaze:{blur:18,opacity:0.7},hoverDepth:{blur:8,opacity:0.5},haze:{blur:22,opacity:0.85},rimShadow:{blur:4,opacity:0},body:{blur:6,opacity:0.8},rimOuter:{blur:8,opacity:0.9},rimMid:{blur:5,opacity:0.85},rimInner:{blur:2,opacity:0.95},surface:{blur:1,opacity:1},chromatic:{blur:1.5,opacity:1},hotspot:{blur:2,opacity:1}};
-  const THEME_LAYER_OVERRIDES={dark:{rimShadow:{blur:3,opacity:0.7},hoverHaze:{blur:18,opacity:0.6},hoverDepth:{blur:8,opacity:0.4}},yellow:{body:{blur:8,opacity:0.95},rimShadow:{blur:3,opacity:0.9},rimOuter:{blur:8,opacity:1},rimMid:{blur:5,opacity:1},rimInner:{blur:2,opacity:1},chromatic:{blur:0.5,opacity:1},surface:{blur:0.5,opacity:1},hotspot:{blur:30,opacity:1},hoverHaze:{blur:20,opacity:0.8},hoverDepth:{blur:10,opacity:0.6},ambientGlow:{blur:28,opacity:1}}};
+  const THEME_LAYER_OVERRIDES={dark:{rimShadow:{blur:3,opacity:0.7},hoverHaze:{blur:18,opacity:0.6},hoverDepth:{blur:8,opacity:0.4}},yellow:{rimShadow:{blur:3,opacity:0.7},hoverHaze:{blur:18,opacity:0.6},hoverDepth:{blur:8,opacity:0.4}}};
   // PS / CS are *max* sample counts; per-instance _rimPS / _chromPS scale down
   // while the cursor is moving fast (delta-driven) and ramp back up when it settles.
   // The convergence loop already does the "ramp back up" automatically: when the
