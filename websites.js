@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
         slidesPerView: 2,
         spaceBetween: 30,
         centeredSlides: true,
-        grabCursor: true,
+        // grabCursor: true,
         loopedSlides: 6,
         watchSlidesProgress: true,
     };

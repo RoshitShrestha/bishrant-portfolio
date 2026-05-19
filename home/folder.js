@@ -230,7 +230,7 @@ const createTimeline = () => {
         });
         gsap.set(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1 });
         gsap.set(refs.hoverBg, { opacity: 0 });
-        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #b5b5b5, #b5b5b5)" });
         gsap.set(refs.desc, { color: "#FFF" });
       } else {
         refs.previewFiles.forEach((previewFile, fileIndex) => {
@@ -246,7 +246,7 @@ const createTimeline = () => {
         });
         gsap.to(refs.cardFolder, { transformOrigin: "50% 50%", scale: 1, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
         gsap.to(refs.hoverBg, { opacity: 0, ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
-        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #FFF, #FFF)" });
+        gsap.set(refs.tag, { backgroundImage: "linear-gradient(135deg, #b5b5b5, #b5b5b5)" });
         gsap.to(refs.desc, { color: "#FFF", ease: "power1.inOut", duration: 0.3, overwrite: "auto" });
       }
 

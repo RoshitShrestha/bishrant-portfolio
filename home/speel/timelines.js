@@ -173,6 +173,27 @@ export function createTimelines(updateSvgOpacity) {
     },
     0
   );
+  heroContentTimeline.from(
+    "[data-hero-element-in='media']",
+    {
+      duration: 1.5,
+      x: "200%",
+      y: "-60%",
+      scale: 1.5,
+      ease: "power3.out",
+    },
+    0
+  );
+  heroContentTimeline.from(
+    "[data-hero-element-in='media']",
+    {
+      duration: 1,
+      filter: "blur(20px)",
+      opacity: 0,
+      ease: "power3.out",
+    },
+    0
+  );
 
   heroContentTimeline.from(
     "[data-navbar]",
@@ -223,6 +244,7 @@ function setupHeroScrollTimeline() {
   const heroDescription = document.querySelector('[data-hero-element="description"]');
   const heroButton = document.querySelectorAll('[data-hero-element="button"]');
   const heroScroll = document.querySelector('[data-hero-element-out="scroll-hint"]');
+  const heroMedia = document.querySelector('[data-hero-element-out="media"]');
 
   if (!heroTitle || !heroDescription) return;
 
@@ -269,6 +291,12 @@ function setupHeroScrollTimeline() {
       stagger: { from: "end", each: 0.01 },
       ease: "none",
     }, 0.1)
+    .to(heroMedia, {
+      yPercent: -30,
+      opacity: 0,
+      filter: "blur(20px)",
+      ease: "none",
+    }, 0.2)
     .to(heroButton, {
       yPercent: -100,
       opacity: 0,

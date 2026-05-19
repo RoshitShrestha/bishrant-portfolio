@@ -57,6 +57,47 @@ const createTimeline = () => {
       duration: 1,
       ease: "power3.out",
     });
+    heroTl.fromTo(
+      "[data-hero-element='scroll-hint']",
+      {
+        opacity: 0,
+        filter: "blur(20px)",
+        yPercent: -150,
+      },
+      {
+        opacity: 1,
+        filter: "blur(0px)",
+        yPercent: 0,
+        duration: 0.8,
+        ease: "power3.out",
+      },
+      0
+    )
+
+    // Pin runs from the very start (during heroTl too) so an early scroll
+    // doesn't jump when the scrub trigger later kicks in.
+    ScrollTrigger.create({
+      trigger: "[data-hero='wrapper']",
+      start: "top top",
+      end: "bottom center",
+      pin: "[data-hero='container']",
+      pinSpacing: false,
+    });
+
+    const heroTlOut = gsap.timeline({
+      scrollTrigger: {
+        trigger: "[data-hero='wrapper']",
+        start: "top top",
+        end: "bottom center",
+        scrub: true,
+        // markers: true,
+      },
+    });
+
+    heroTlOut.scrollTrigger.disable();
+
+    // Lock scroll until the hero intro completes
+    lenis?.stop?.();
 
     document.fonts.ready.then(() => {
       heroTitles.forEach((title, index) => {
@@ -99,7 +140,11 @@ const createTimeline = () => {
               from: "random"
             },
             onComplete: () => {
-              titleSplit.revert();
+              // titleSplit.revert();
+
+              // Re-enable scroll after the hero intro stagger finishes.
+              // Fires once per paragraph; lenis.start() is idempotent.
+              lenis?.start?.();
 
               const valuesLink = document.querySelector("[data-scroll-to='values']");
               const valuesSection = document.querySelector("#values");
@@ -120,12 +165,82 @@ const createTimeline = () => {
 
       });
 
+      // Build heroTlOut in reverse DOM order so the last paragraph animates first
+      [...heroTitles].reverse().forEach((title) => {
+        const heroTitleEl = title.querySelectorAll(
+          ".hero-title-word, .u-text-style-highlight"
+        );
+
+        // "+=0.001" keeps the tween off timeline time 0, so ScrollTrigger's
+        // initial progress(0) render doesn't activate the first stagger
+        // sub-tween (which would otherwise stamp opacity:1 onto the last word).
+        heroTlOut.fromTo(
+          heroTitleEl,
+          {
+            yPercent: 0,
+            opacity: 1,
+            filter: "blur(0px)",
+            immediateRender: false,
+          },
+          {
+            yPercent: -100,
+            opacity: 0,
+            filter: "blur(20px)",
+            stagger: { from: "end", each: 0.01 },
+            ease: "none",
+            immediateRender: false,
+          },
+          "+=0.001"
+        );
+      });
+
+      heroTlOut.fromTo(
+        "[data-hero-element='scroll-hint']",
+        {
+          opacity: 1,
+          filter: "blur(0px)",
+          yPercent: 0,
+          immediateRender: false,
+        },
+        {
+          opacity: 0,
+          filter: "blur(20px)",
+          yPercent: -10,
+          ease: "none",
+          immediateRender: false,
+        },
+        0
+      )
+
+      // Logo lives outside the paragraph loop so it doesn't sit between the two paragraphs
+      heroTlOut.fromTo(
+        heroLogo,
+        {
+          opacity: 1,
+          filter: "blur(0px)",
+          yPercent: 0,
+          immediateRender: false,
+        },
+        {
+          opacity: 0,
+          filter: "blur(20px)",
+          yPercent: -10,
+          ease: "none",
+          immediateRender: false,
+        },
+        1
+      );
+
+      heroTl.eventCallback("onComplete", () => {
+        heroTlOut.scrollTrigger.enable();
+        ScrollTrigger.refresh();
+      });
+
       // GSDevTools.create({ animation: heroTl });
       loaderAnimation().then(() => {
         heroTl.play();
       });
     });
-
 
     // ========== EXPERIENCE TITLE ANIMATION ========== //
     const expScrollTrack = document.querySelector("[data-experience-track]");

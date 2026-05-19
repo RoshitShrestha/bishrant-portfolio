@@ -116,9 +116,9 @@ document.addEventListener("DOMContentLoaded", () => {
     gsap.set(transitionBlock, { display: "block" });
 
     transitionTl.fromTo(transitionBlock, {
-      backgroundColor: "hsla(0, 0.00%, 9.00%, 0.00)",
+      backgroundColor: "hsla(0, 0.00%, 0.00%, 0.00)",
     }, {
-      backgroundColor: "hsla(0, 0.00%, 9.00%, 1.00)",
+      backgroundColor: "hsla(0, 0.00%, 0.00%, 1.00)",
       duration: 0.8,
       ease: "power2.inOut",
     });

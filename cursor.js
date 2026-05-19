@@ -22,7 +22,7 @@ const CONFIG = {
     // CSS selectors that decide which mode each element triggers. Extend as needed.
     // Use descendant combinators (e.g. 'p span') to match by ancestor.
     triggers: {
-        text:   'h1, h1 *, h2, h2 div, p, p span, p em, p strong, input, textarea',  // text-mode for inline children of <p>
+        text:   'h1, h1 *, h2, h2 div, p *, input, textarea',  // text-mode for inline children of <p>
         button: 'button, a.spec-btn',                         // add ', a' to include links
         // Opt-out region: any element inside a match here will NOT receive text mode,
         // even if it matches `triggers.text`. Useful for clickable cards that contain
@@ -126,7 +126,7 @@ const iFillStyle = iFill.style;
 // ============================================================================
 //  4. STATE
 // ============================================================================
-let mx = innerWidth / 2, my = innerHeight / 2;
+let mx = innerWidth, my = 0;
 let px = mx, py = my;
 
 let mode = 'default';
