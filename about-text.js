@@ -63,6 +63,7 @@ const createTimeline = () => {
   flipCtx = gsap.context(() => {
     const heroTitles = document.querySelectorAll("[data-about-hero-title]");
     const heroLogo = document.querySelector("[data-about-hero-logo]");
+    const heroBg = document.querySelector("[data-marquee-background]");
 
     const heroTl = gsap.timeline({
       paused: true,
@@ -260,6 +261,22 @@ const createTimeline = () => {
         },
         1
       );
+
+      heroTlOut.fromTo(
+        heroBg,
+        {
+          opacity: 1,
+          filter: "blur(0px)",
+          immediateRender: false,
+        },
+        {
+          opacity: 0,
+          filter: "blur(20px)",
+          ease: "none",
+          immediateRender: false,
+        },
+        0.5
+      )
 
       heroTl.eventCallback("onComplete", () => {
         heroTlOut.scrollTrigger.enable();
