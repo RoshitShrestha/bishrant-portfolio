@@ -22,7 +22,7 @@ const CONFIG = {
     // CSS selectors that decide which mode each element triggers. Extend as needed.
     // Use descendant combinators (e.g. 'p span') to match by ancestor.
     triggers: {
-        text:   'h1, h1 *, h2, h2 div, p *, input, textarea, .cs-text-style-b14, .cs-text-style-b14 *, cs-text-style-body, cs-text-style-body * ',  // text-mode for inline children of <p>
+        text:   'h1, h1 *, h2, h2 div, p *, input, textarea, .cs-text-style-b14, .cs-text-style-b14 *, .cs-text-style-body, .cs-text-style-body * ',  // text-mode for inline children of <p>
         button: 'button, a.spec-btn',                         // add ', a' to include links
         // Opt-out region: any element inside a match here will NOT receive text mode,
         // even if it matches `triggers.text`. Useful for clickable cards that contain
